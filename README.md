@@ -5,16 +5,17 @@ thực thi `/order <item>`, đọc duy nhất `Orders (Page 1)` và lưu lịch 
 khối lượng order vào PostgreSQL để truy vấn bằng Grafana hoặc REST API.
 
 ```text
-Minecraft server ← Mineflayer workers → PostgreSQL ← Express API / UI
+Minecraft server ← Mineflayer workers → Express API → PostgreSQL ← UI / Grafana
 ```
 
 ## Chức năng
 
 - Thêm và đăng nhập nhiều account bằng Microsoft device code hoặc offline authentication ngay trên UI.
-- Express API và Minecraft collector chạy thành hai process độc lập.
+- Collector parse lore thành số liệu chuẩn hóa và gửi observation tới Express API.
+- API validate, tính summary và lưu snapshot/entries trong cùng transaction.
 - Quét tuần tự nhiều item, không mở đồng thời nhiều container.
 - Parse `price`, `delivered`, `total` và `remaining` từ lore.
-- Tổng hợp best price, best-price volume, total volume, weighted price và fill ratio.
+- Tổng hợp giá thị trường đã lọc nhiễu, best price, volume và fill ratio.
 - Ước lượng queue tại giá cao hơn và fill velocity khi dữ liệu đủ an toàn.
 - UI cấu hình động bằng HTML, AlpineJS và Pico.css, không có build step.
 - Cấu hình vận hành lưu trong PostgreSQL và áp dụng không cần restart.
@@ -166,7 +167,25 @@ curl 'http://localhost:3010/opportunities/minecraft:redstone_block'
 remaining = total - delivered
 weighted_price = Σ(price × remaining) / Σ(remaining)
 higher_price_queue(P) = Σ(remaining tại price > P)
+temporary_market_price = Σ(price × delivered) / Σ(delivered)
+market_orders = orders có price >= temporary_market_price × marketPriceFloorRatio
+market_average_price = Σ(price × delivered) / Σ(delivered) trên market_orders
+market_sample_order_count = số order trong market_orders
+market_sample_delivered = Σ(delivered) trong market_orders
+market_sample_volume = Σ(total) trong market_orders
+higher_than_average_delivered = Σ(delivered) tại price > market_average_price
+higher_than_average_volume = Σ(total) tại price > market_average_price
+market_max_price_delivered = Σ(delivered) tại market_max_price
+market_max_price_volume = Σ(total) tại market_max_price
 ```
+
+Mỗi snapshot lưu `market_price_floor_ratio` và `calculation_version` để các
+summary mới có thể backfill từ `order_entries` mà không mất ngữ cảnh công thức.
+
+`marketPriceFloorRatio` là dynamic config, mặc định `0.8`. Queue ở giá thị
+trường cao nhất và queue cao hơn giá trung bình đều cộng `remaining` trong
+tập `market_orders` đã lọc. Order có `delivered = 0` không tác động giá trung
+bình nhưng queue còn lại của nó vẫn được tính.
 
 `fill_velocity_per_minute` được so sánh theo `item_id, price`, không phụ thuộc
 account thực hiện scan. Chỉ tính khi tổng quantity của price bucket không đổi
@@ -182,7 +201,8 @@ Database/User/Password: order_analytics
 Nếu Grafana ở cùng Compose network, dùng `postgres:5432`.
 
 ```sql
-SELECT observed_at AS time, best_price, total_volume, weighted_price, fill_ratio
+SELECT observed_at AS time, market_max_price, market_max_price_queue,
+       market_average_price, higher_than_average_queue
 FROM order_snapshots
 WHERE item_id = 'minecraft:redstone_block' AND $__timeFilter(observed_at)
 ORDER BY observed_at;

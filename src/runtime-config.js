@@ -4,10 +4,13 @@ function normalizeRuntimeConfig(input, fallback = {}) {
   const raw = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const interval = Number(raw.scanIntervalSeconds ?? fallback.scanIntervalSeconds ?? 300);
   const settle = Number(raw.scanSettleMs ?? fallback.scanSettleMs ?? 1200);
+  const marketPriceFloorRatio = Number(raw.marketPriceFloorRatio ?? fallback.marketPriceFloorRatio ?? 0.8);
   if (!Number.isInteger(interval) || interval < 10 || interval > 86400)
     throw Object.assign(new Error("scanIntervalSeconds must be an integer from 10 to 86400"), { statusCode: 400 });
   if (!Number.isInteger(settle) || settle < 0 || settle > 10000)
     throw Object.assign(new Error("scanSettleMs must be an integer from 0 to 10000"), { statusCode: 400 });
+  if (!Number.isFinite(marketPriceFloorRatio) || marketPriceFloorRatio <= 0 || marketPriceFloorRatio > 1)
+    throw Object.assign(new Error("marketPriceFloorRatio must be greater than 0 and at most 1"), { statusCode: 400 });
   const scanEnabled = raw.scanEnabled ?? fallback.scanEnabled ?? true;
   if (typeof scanEnabled !== "boolean")
     throw Object.assign(new Error("scanEnabled must be boolean"), { statusCode: 400 });
@@ -28,6 +31,7 @@ function normalizeRuntimeConfig(input, fallback = {}) {
     scanEnabled,
     scanIntervalSeconds: interval,
     scanSettleMs: settle,
+    marketPriceFloorRatio,
     items
   };
 }

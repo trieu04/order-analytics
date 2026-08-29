@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
-const { createCollector, stackMatchesItemId } = require("../src/collector");
+const { createCollector, randomizedPreScanDelayMs, stackMatchesItemId } = require("../src/collector");
 
 function fakeBot() {
   const bot = new EventEmitter();
@@ -34,7 +34,7 @@ test("registers and removes windowOpen listener around the order command", async
   const collector = createCollector({
     minecraft: { host: "localhost", port: 25565 },
     scanSettleMs: 0,
-    database: { addSnapshot: async () => ({}) },
+    observationClient: { submit: async () => ({}) },
     logger: { log() {}, error() {} },
     createBot: () => bot
   });
@@ -55,6 +55,11 @@ test("matches Mineflayer stack names against namespaced item ids", () => {
   assert.equal(stackMatchesItemId(null, "minecraft:redstone_block"), false);
 });
 
+test("adds bounded jitter before starting a scan", () => {
+  assert.equal(randomizedPreScanDelayMs(() => 0), 0);
+  assert.equal(randomizedPreScanDelayMs(() => 0.999999), 350);
+});
+
 test("only stores order rows whose stack id matches the requested item", async () => {
   const bot = fakeBot();
   let stored;
@@ -73,7 +78,7 @@ test("only stores order rows whose stack id matches the requested item", async (
   const collector = createCollector({
     minecraft: { host: "localhost", port: 25565 },
     scanSettleMs: 0,
-    database: { addSnapshot: async snapshot => { stored = snapshot; return { bestPrice: 2000, totalVolume: 10 }; } },
+    observationClient: { submit: async snapshot => { stored = snapshot; return { bestPrice: 2000, totalVolume: 10 }; } },
     logger: { log() {}, error() {} },
     createBot: () => bot
   });
@@ -82,6 +87,7 @@ test("only stores order rows whose stack id matches the requested item", async (
   bot.emit("spawn");
   await collector.enqueue({ id: "minecraft:stone", query: "stone" });
 
+  assert.equal(stored.windowTitle, "Orders (Page 1)");
   assert.deepEqual(stored.orders, [
     { slot: 0, price: 2000, delivered: 0, total: 10, remaining: 10 }
   ]);

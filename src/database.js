@@ -27,6 +27,21 @@ function createDatabase(connectionString) {
         fill_ratio DOUBLE PRECISION,
         order_count INTEGER NOT NULL
       );
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_min_price NUMERIC;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_min_price_queue BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_average_price DOUBLE PRECISION;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS higher_than_average_queue BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_max_price NUMERIC;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_max_price_queue BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_sample_order_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_sample_delivered BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_price_floor_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.8;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS calculation_version SMALLINT NOT NULL DEFAULT 1;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_sample_volume BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS higher_than_average_delivered BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS higher_than_average_volume BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_max_price_delivered BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE order_snapshots ADD COLUMN IF NOT EXISTS market_max_price_volume BIGINT NOT NULL DEFAULT 0;
       CREATE INDEX IF NOT EXISTS order_snapshots_item_time_idx
         ON order_snapshots (item_id, observed_at DESC);
 
@@ -95,6 +110,61 @@ function createDatabase(connectionString) {
         remaining BIGINT NOT NULL CHECK (remaining = total - delivered AND remaining >= 0),
         UNIQUE (snapshot_id, slot)
       );
+
+      WITH preliminary AS (
+        SELECT s.id AS snapshot_id, s.market_price_floor_ratio,
+               SUM(e.price::double precision * e.delivered) / NULLIF(SUM(e.delivered), 0) AS average_price
+        FROM order_snapshots s JOIN order_entries e ON e.snapshot_id = s.id
+        GROUP BY s.id
+      ), samples AS (
+        SELECT p.snapshot_id, COUNT(*)::integer AS order_count,
+               SUM(e.delivered)::bigint AS delivered
+        FROM preliminary p JOIN order_entries e ON e.snapshot_id = p.snapshot_id
+        WHERE e.price >= p.average_price * p.market_price_floor_ratio
+        GROUP BY p.snapshot_id
+      )
+      UPDATE order_snapshots s
+      SET market_sample_order_count = sample.order_count,
+          market_sample_delivered = sample.delivered,
+          calculation_version = 2
+      FROM samples sample
+      WHERE s.id = sample.snapshot_id AND s.market_average_price IS NOT NULL
+        AND s.calculation_version < 2;
+
+      WITH preliminary AS (
+        SELECT s.id AS snapshot_id,
+               SUM(e.price::double precision * e.delivered) / NULLIF(SUM(e.delivered), 0) AS average_price
+        FROM order_snapshots s JOIN order_entries e ON e.snapshot_id = s.id
+        GROUP BY s.id
+      ), aggregates AS (
+        SELECT s.id AS snapshot_id,
+               SUM(e.total) FILTER (WHERE e.price >= p.average_price * s.market_price_floor_ratio)::bigint AS sample_volume,
+               SUM(e.delivered) FILTER (WHERE e.price > s.market_average_price)::bigint AS higher_delivered,
+               SUM(e.total) FILTER (WHERE e.price > s.market_average_price)::bigint AS higher_volume
+        FROM order_snapshots s JOIN preliminary p ON p.snapshot_id = s.id
+          JOIN order_entries e ON e.snapshot_id = s.id
+        GROUP BY s.id
+      )
+      UPDATE order_snapshots s
+      SET market_sample_volume = COALESCE(a.sample_volume, 0),
+          higher_than_average_delivered = COALESCE(a.higher_delivered, 0),
+          higher_than_average_volume = COALESCE(a.higher_volume, 0),
+          calculation_version = 3
+      FROM aggregates a
+      WHERE s.id = a.snapshot_id AND s.calculation_version < 3;
+
+      WITH max_price AS (
+        SELECT s.id AS snapshot_id, SUM(e.delivered)::bigint AS delivered, SUM(e.total)::bigint AS volume
+        FROM order_snapshots s JOIN order_entries e
+          ON e.snapshot_id = s.id AND e.price = s.market_max_price
+        GROUP BY s.id
+      )
+      UPDATE order_snapshots s
+      SET market_max_price_delivered = COALESCE(m.delivered, 0),
+          market_max_price_volume = COALESCE(m.volume, 0),
+          calculation_version = 4
+      FROM max_price m
+      WHERE s.id = m.snapshot_id AND s.calculation_version < 4;
 
       DROP VIEW IF EXISTS order_price_opportunities;
       DROP VIEW IF EXISTS order_price_levels;
@@ -274,18 +344,28 @@ function createDatabase(connectionString) {
   }
 
   async function addSnapshot({ botId, itemId, query, observedAt, orders }) {
-    const summary = summarize(orders);
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      const configured = await client.query("SELECT value FROM app_config WHERE id = 1");
+      const marketPriceFloorRatio = Number(configured.rows[0]?.value?.marketPriceFloorRatio ?? 0.8);
+      const summary = summarize(orders, marketPriceFloorRatio);
       const snapshot = await client.query(`
         INSERT INTO order_snapshots
           (bot_id, item_id, search_query, observed_at, best_price, best_price_volume,
-           total_volume, weighted_price, fill_ratio, order_count)
-        VALUES ($1, $2, $3, to_timestamp($4 / 1000.0), $5, $6, $7, $8, $9, $10)
+           total_volume, weighted_price, fill_ratio, order_count, market_max_price,
+           market_max_price_queue, market_average_price, higher_than_average_queue,
+           market_sample_order_count, market_sample_delivered, market_price_floor_ratio, calculation_version,
+           market_sample_volume, higher_than_average_delivered, higher_than_average_volume,
+           market_max_price_delivered, market_max_price_volume)
+        VALUES ($1, $2, $3, to_timestamp($4 / 1000.0), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 4, $18, $19, $20, $21, $22)
         RETURNING id, observed_at
       `, [botId, itemId, query, observedAt, summary.bestPrice, summary.bestPriceVolume,
-        summary.totalVolume, summary.weightedPrice, summary.fillRatio, summary.orderCount]);
+        summary.totalVolume, summary.weightedPrice, summary.fillRatio, summary.orderCount,
+        summary.marketMaxPrice, summary.marketMaxPriceQueue, summary.marketAveragePrice,
+        summary.higherThanAverageQueue, summary.marketSampleOrderCount, summary.marketSampleDelivered,
+        marketPriceFloorRatio, summary.marketSampleVolume, summary.higherThanAverageDelivered,
+        summary.higherThanAverageVolume, summary.marketMaxPriceDelivered, summary.marketMaxPriceVolume]);
       for (const order of orders) {
         await client.query(`
           INSERT INTO order_entries (snapshot_id, slot, price, delivered, total, remaining)
@@ -308,6 +388,19 @@ function createDatabase(connectionString) {
              snapshot.best_price_volume AS "bestPriceVolume",
              snapshot.total_volume AS "totalVolume",
              snapshot.weighted_price AS "weightedPrice",
+             snapshot.market_max_price AS "marketMaxPrice",
+             snapshot.market_max_price_queue AS "marketMaxPriceQueue",
+             snapshot.market_max_price_delivered AS "marketMaxPriceDelivered",
+             snapshot.market_max_price_volume AS "marketMaxPriceVolume",
+             snapshot.market_average_price AS "marketAveragePrice",
+             snapshot.market_sample_order_count AS "marketSampleOrderCount",
+             snapshot.market_sample_delivered AS "marketSampleDelivered",
+             snapshot.market_sample_volume AS "marketSampleVolume",
+             snapshot.market_price_floor_ratio AS "marketPriceFloorRatio",
+             snapshot.calculation_version AS "calculationVersion",
+             snapshot.higher_than_average_delivered AS "higherThanAverageDelivered",
+             snapshot.higher_than_average_volume AS "higherThanAverageVolume",
+             snapshot.higher_than_average_queue AS "higherThanAverageQueue",
              snapshot.fill_ratio AS "fillRatio",
              best.fill_ratio AS "bestPriceFillRatio",
              best.order_count AS "bestPriceOrderCount",

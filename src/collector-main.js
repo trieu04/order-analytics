@@ -5,6 +5,7 @@ const path = require("node:path");
 const { loadConfig } = require("./config");
 const { createDatabase } = require("./database");
 const { createCollector } = require("./collector");
+const { createObservationClient } = require("./observation-client");
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -14,6 +15,7 @@ async function main() {
   await database.initialize();
   await database.seedLegacyAccount(config.legacyAccount);
   await database.recoverCollectorWork();
+  const observationClient = createObservationClient(config.internalApiUrl);
   const workers = new Map();
   let stopping = false;
   let nextScheduledAt = 0;
@@ -22,7 +24,7 @@ async function main() {
   async function start(account) {
     if (workers.has(account.id) || !account.enabled) return;
     const profilesFolder = path.join(config.minecraft.profilesFolder, String(account.profileKey));
-    const worker = createCollector({ accountId: account.id, database, scanSettleMs: config.scanSettleMs,
+    const worker = createCollector({ accountId: account.id, observationClient, scanSettleMs: config.scanSettleMs,
       minecraft: { ...config.minecraft, username: account.username, auth: account.authType, profilesFolder },
       onState: (state, details) => database.putAccountStatus(account.id, state, details)
         .catch(error => console.error(`[minecraft] ${error.message}`)),

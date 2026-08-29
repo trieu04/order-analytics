@@ -36,6 +36,8 @@ services:
     command: ["node", "src/collector-main.js"]
     restart: unless-stopped
     depends_on:
+      api:
+        condition: service_started
       postgres:
         condition: service_healthy
     env_file:
@@ -43,6 +45,7 @@ services:
     environment:
       MC_PROFILES_FOLDER: /app/profiles
       DATABASE_URL: ${SERVICE_DATABASE_URL:-postgres://order_analytics:order_analytics@postgres:5432/order_analytics}
+      INTERNAL_API_URL: http://api:${API_PORT:-3010}
     volumes:
       - auth-profiles:/app/profiles
 

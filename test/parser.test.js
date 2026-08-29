@@ -52,6 +52,41 @@ test("summarizes best price and remaining market volume", () => {
   assert.ok(result.weightedPrice > 1700 && result.weightedPrice < 1800);
 });
 
+test("filters low price noise and calculates delivered-weighted market price", () => {
+  const result = summarize([
+    { price: 10, delivered: 1, total: 101, remaining: 100 },
+    { price: 100, delivered: 10, total: 60, remaining: 50 },
+    { price: 110, delivered: 10, total: 40, remaining: 30 },
+    { price: 120, delivered: 0, total: 20, remaining: 20 }
+  ], 0.8);
+  assert.equal(result.marketMaxPrice, 120);
+  assert.equal(result.marketMaxPriceQueue, 20);
+  assert.equal(result.marketMaxPriceDelivered, 0);
+  assert.equal(result.marketMaxPriceVolume, 20);
+  assert.equal(result.marketAveragePrice, 105);
+  assert.equal(result.marketSampleOrderCount, 3);
+  assert.equal(result.marketSampleDelivered, 20);
+  assert.equal(result.marketSampleVolume, 120);
+  assert.equal(result.higherThanAverageQueue, 50);
+  assert.equal(result.higherThanAverageDelivered, 10);
+  assert.equal(result.higherThanAverageVolume, 60);
+});
+
+test("returns no market price when no order has delivered items", () => {
+  const result = summarize([{ price: 100, delivered: 0, total: 10, remaining: 10 }]);
+  assert.equal(result.marketMaxPrice, null);
+  assert.equal(result.marketAveragePrice, null);
+  assert.equal(result.marketSampleOrderCount, 0);
+  assert.equal(result.marketSampleDelivered, 0);
+  assert.equal(result.marketSampleVolume, 0);
+  assert.equal(result.marketMaxPriceQueue, 0);
+  assert.equal(result.marketMaxPriceDelivered, 0);
+  assert.equal(result.marketMaxPriceVolume, 0);
+  assert.equal(result.higherThanAverageQueue, 0);
+  assert.equal(result.higherThanAverageDelivered, 0);
+  assert.equal(result.higherThanAverageVolume, 0);
+});
+
 test("rejects malformed or over-delivered order", () => {
   assert.equal(parseOrderLore(["$ 1K each", "2k/1k Delivered"]), null);
   assert.equal(parseOrderLore(["$ 1K each"]), null);

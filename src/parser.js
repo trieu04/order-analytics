@@ -84,7 +84,7 @@ function parseOrderLore(lines) {
   return { price, delivered, total, remaining: total - delivered };
 }
 
-function summarize(orders) {
+function summarize(orders, marketPriceFloorRatio = 0.8) {
   const open = orders.filter(order => order.remaining > 0);
   const bestPrice = open.length ? Math.max(...open.map(order => order.price)) : null;
   const totalVolume = open.reduce((sum, order) => sum + order.remaining, 0);
@@ -92,6 +92,21 @@ function summarize(orders) {
     .reduce((sum, order) => sum + order.remaining, 0);
   const total = orders.reduce((sum, order) => sum + order.total, 0);
   const delivered = orders.reduce((sum, order) => sum + order.delivered, 0);
+  const priced = orders.filter(order => order.delivered > 0);
+  const preliminaryAveragePrice = delivered
+    ? priced.reduce((sum, order) => sum + order.price * order.delivered, 0) / delivered : null;
+  const marketOrders = preliminaryAveragePrice == null ? []
+    : orders.filter(order => order.price >= preliminaryAveragePrice * marketPriceFloorRatio);
+  const marketDelivered = marketOrders.reduce((sum, order) => sum + order.delivered, 0);
+  const marketSampleOrderCount = marketOrders.length;
+  const marketSampleVolume = marketOrders.reduce((sum, order) => sum + order.total, 0);
+  const marketAveragePrice = marketDelivered
+    ? marketOrders.reduce((sum, order) => sum + order.price * order.delivered, 0) / marketDelivered : null;
+  const openMarketOrders = marketOrders.filter(order => order.remaining > 0);
+  const marketMaxPrice = openMarketOrders.length ? Math.max(...openMarketOrders.map(order => order.price)) : null;
+  const marketMaxPriceOrders = marketOrders.filter(order => order.price === marketMaxPrice);
+  const higherThanAverageOrders = marketAveragePrice == null ? []
+    : marketOrders.filter(order => order.price > marketAveragePrice);
   return {
     bestPrice,
     bestPriceVolume,
@@ -99,6 +114,18 @@ function summarize(orders) {
     weightedPrice: totalVolume
       ? open.reduce((sum, order) => sum + order.price * order.remaining, 0) / totalVolume : null,
     fillRatio: total ? delivered / total : null,
+    marketMaxPrice,
+    marketMaxPriceQueue: openMarketOrders.filter(order => order.price === marketMaxPrice)
+      .reduce((sum, order) => sum + order.remaining, 0),
+    marketMaxPriceDelivered: marketMaxPriceOrders.reduce((sum, order) => sum + order.delivered, 0),
+    marketMaxPriceVolume: marketMaxPriceOrders.reduce((sum, order) => sum + order.total, 0),
+    marketAveragePrice,
+    marketSampleOrderCount,
+    marketSampleDelivered: marketDelivered,
+    marketSampleVolume,
+    higherThanAverageQueue: higherThanAverageOrders.reduce((sum, order) => sum + order.remaining, 0),
+    higherThanAverageDelivered: higherThanAverageOrders.reduce((sum, order) => sum + order.delivered, 0),
+    higherThanAverageVolume: higherThanAverageOrders.reduce((sum, order) => sum + order.total, 0),
     orderCount: orders.length
   };
 }

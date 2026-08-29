@@ -1,9 +1,18 @@
 "use strict";
 
 const mineflayer = require("mineflayer");
-const { componentText, itemLore, parseOrderLore, summarize } = require("./parser");
+const { componentText, itemLore, parseOrderLore } = require("./parser");
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const PRE_SCAN_BASE_DELAY_MS = 100;
+const PRE_SCAN_JITTER_MIN_MS = -100;
+const PRE_SCAN_JITTER_MAX_MS = 250;
+
+function randomizedPreScanDelayMs(random = Math.random) {
+  const jitterRange = PRE_SCAN_JITTER_MAX_MS - PRE_SCAN_JITTER_MIN_MS + 1;
+  const jitterMs = PRE_SCAN_JITTER_MIN_MS + Math.floor(random() * jitterRange);
+  return PRE_SCAN_BASE_DELAY_MS + jitterMs;
+}
 
 function logText(value) {
   return componentText(value).replace(/[\r\n\t]+/g, " ").trim();
@@ -16,7 +25,7 @@ function stackMatchesItemId(stack, expectedId) {
   return candidates.includes(expectedId);
 }
 
-function createCollector({ minecraft, accountId, scanSettleMs, database, logger = console,
+function createCollector({ minecraft, accountId, scanSettleMs, observationClient, logger = console,
   createBot = mineflayer.createBot, onState = () => {}, onAuthCode = () => {} }) {
   let bot = null;
   let ready = false;
@@ -87,6 +96,7 @@ function createCollector({ minecraft, accountId, scanSettleMs, database, logger 
       bot.closeWindow(bot.currentWindow);
     }
 
+    await wait(randomizedPreScanDelayMs());
     logger.log(`[minecraft] Action: send /order ${item.query}`);
     const windowPromise = waitForOrdersWindow();
     bot.chat(`/order ${item.query}`);
@@ -103,10 +113,11 @@ function createCollector({ minecraft, accountId, scanSettleMs, database, logger 
       }
       if (!orders.length) throw new Error(`No order rows parsed for ${item.query}`);
       const observedAt = Date.now();
-      const result = await database.addSnapshot({
-        botId: accountId || bot.username, itemId: item.id, query: item.query, observedAt, orders
+      const result = await observationClient.submit({
+        botId: accountId || bot.username, itemId: item.id, query: item.query, observedAt,
+        windowTitle: logText(window.title), orders
       });
-      lastScan = { itemId: item.id, query: item.query, observedAt, ...summarize(orders) };
+      lastScan = { itemId: item.id, query: item.query, ...result };
       logger.log(`[scan] ${item.id}: best=${result.bestPrice}, volume=${result.totalVolume}, orders=${orders.length}`);
       return result;
     } finally {
@@ -141,4 +152,4 @@ function createCollector({ minecraft, accountId, scanSettleMs, database, logger 
   };
 }
 
-module.exports = { createCollector, stackMatchesItemId };
+module.exports = { createCollector, randomizedPreScanDelayMs, stackMatchesItemId };
