@@ -16,25 +16,32 @@ function stackMatchesItemId(stack, expectedId) {
   return candidates.includes(expectedId);
 }
 
-function createCollector({ minecraft, scanSettleMs, database, logger = console, createBot = mineflayer.createBot }) {
+function createCollector({ minecraft, accountId, scanSettleMs, database, logger = console,
+  createBot = mineflayer.createBot, onState = () => {}, onAuthCode = () => {} }) {
   let bot = null;
   let ready = false;
   let reconnectTimer = null;
   let queue = Promise.resolve();
   let lastScan = null;
   let settleMs = scanSettleMs;
+  let stopped = false;
 
   function connect() {
+    if (stopped) return;
     clearTimeout(reconnectTimer);
     ready = false;
     bot = createBot({
       ...minecraft,
       onMsaCode(data) {
-        logger.log(`[auth] Open ${data.verification_uri} to authenticate`);
+        onState("awaiting_auth");
+        onAuthCode(data);
+        logger.log(`[minecraft] account=${accountId || "default"} authentication required`);
       }
     });
+    onState("connecting");
     bot.once("spawn", () => {
       ready = true;
+      onState("connected", { minecraftUsername: bot.username });
       logger.log(`[minecraft] Connected as ${bot.username} to ${minecraft.host}:${minecraft.port}`);
     });
     bot.on("kicked", reason => logger.error(`[minecraft] Kicked: ${componentText(reason)}`));
@@ -45,20 +52,31 @@ function createCollector({ minecraft, scanSettleMs, database, logger = console, 
     });
     bot.once("end", reason => {
       ready = false;
+      if (stopped) return;
+      onState("reconnecting", { lastError: String(reason) });
       logger.error(`[minecraft] Disconnected: ${reason}; reconnecting in 10s`);
       reconnectTimer = setTimeout(connect, 10_000);
     });
   }
 
   async function waitForOrdersWindow(timeoutMs = 10_000) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const window = bot?.currentWindow;
-      const title = componentText(window?.title).trim();
-      if (window && title.includes("Orders (Page 1)")) return window;
-      await wait(50);
-    }
-    throw new Error("Timed out waiting for Orders (Page 1)");
+    return new Promise((resolve, reject) => {
+      let timer;
+      const cleanup = () => {
+        clearTimeout(timer);
+        bot?.removeListener("windowOpen", onWindow);
+      };
+      const onWindow = window => {
+        if (!componentText(window?.title).trim().includes("Orders (Page 1)")) return;
+        cleanup();
+        resolve(window);
+      };
+      bot.on("windowOpen", onWindow);
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out waiting for Orders (Page 1)"));
+      }, timeoutMs);
+    });
   }
 
   async function scanNow(item) {
@@ -70,8 +88,9 @@ function createCollector({ minecraft, scanSettleMs, database, logger = console, 
     }
 
     logger.log(`[minecraft] Action: send /order ${item.query}`);
+    const windowPromise = waitForOrdersWindow();
     bot.chat(`/order ${item.query}`);
-    const window = await waitForOrdersWindow();
+    const window = await windowPromise;
     logger.log(`[minecraft] Action: opened ${logText(window.title)}`);
     try {
       await wait(settleMs);
@@ -85,7 +104,7 @@ function createCollector({ minecraft, scanSettleMs, database, logger = console, 
       if (!orders.length) throw new Error(`No order rows parsed for ${item.query}`);
       const observedAt = Date.now();
       const result = await database.addSnapshot({
-        botId: bot.username, itemId: item.id, query: item.query, observedAt, orders
+        botId: accountId || bot.username, itemId: item.id, query: item.query, observedAt, orders
       });
       lastScan = { itemId: item.id, query: item.query, observedAt, ...summarize(orders) };
       logger.log(`[scan] ${item.id}: best=${result.bestPrice}, volume=${result.totalVolume}, orders=${orders.length}`);
@@ -105,8 +124,10 @@ function createCollector({ minecraft, scanSettleMs, database, logger = console, 
   }
 
   function stop() {
+    stopped = true;
     clearTimeout(reconnectTimer);
     ready = false;
+    onState("disconnected");
     if (bot) logger.log("[minecraft] Action: disconnect collector shutdown");
     if (typeof bot?.quit === "function") bot.quit("collector shutdown");
     else if (typeof bot?.end === "function") bot.end("collector shutdown");

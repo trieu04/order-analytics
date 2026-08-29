@@ -4,8 +4,9 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "start": "node src/api.js",
+    "start:collector": "node src/collector-main.js",
+    "dev": "node --watch src/api.js",
     "test": "node --test test/*.test.js"
   },
   "engines": {

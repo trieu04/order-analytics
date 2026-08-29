@@ -20,7 +20,7 @@ function createDatabase(connectionString) {
         search_query TEXT NOT NULL,
         observed_at TIMESTAMPTZ NOT NULL,
         received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        best_price BIGINT,
+        best_price NUMERIC,
         best_price_volume BIGINT NOT NULL,
         total_volume BIGINT NOT NULL,
         weighted_price DOUBLE PRECISION,
@@ -30,18 +30,78 @@ function createDatabase(connectionString) {
       CREATE INDEX IF NOT EXISTS order_snapshots_item_time_idx
         ON order_snapshots (item_id, observed_at DESC);
 
+      CREATE TABLE IF NOT EXISTS minecraft_accounts (
+        id UUID PRIMARY KEY,
+        label TEXT NOT NULL,
+        username TEXT NOT NULL UNIQUE,
+        auth_type TEXT NOT NULL CHECK (auth_type IN ('microsoft', 'offline')),
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        profile_key UUID NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS minecraft_account_status (
+        account_id UUID PRIMARY KEY REFERENCES minecraft_accounts(id) ON DELETE CASCADE,
+        state TEXT NOT NULL,
+        minecraft_username TEXT,
+        heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        connected_at TIMESTAMPTZ,
+        last_scan_at TIMESTAMPTZ,
+        current_item_id TEXT,
+        last_error TEXT
+      );
+      CREATE TABLE IF NOT EXISTS minecraft_login_challenges (
+        account_id UUID PRIMARY KEY REFERENCES minecraft_accounts(id) ON DELETE CASCADE,
+        verification_uri TEXT NOT NULL,
+        user_code TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS minecraft_account_commands (
+        id BIGSERIAL PRIMARY KEY,
+        account_id UUID NOT NULL REFERENCES minecraft_accounts(id) ON DELETE CASCADE,
+        command TEXT NOT NULL CHECK (command IN ('connect', 'disconnect', 'clear_session')),
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        claimed_at TIMESTAMPTZ,
+        finished_at TIMESTAMPTZ,
+        error TEXT
+      );
+      CREATE TABLE IF NOT EXISTS scan_jobs (
+        id BIGSERIAL PRIMARY KEY,
+        item_id TEXT NOT NULL,
+        search_query TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('scheduled', 'manual')),
+        status TEXT NOT NULL DEFAULT 'pending',
+        claimed_by UUID REFERENCES minecraft_accounts(id) ON DELETE SET NULL,
+        available_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        claimed_at TIMESTAMPTZ,
+        finished_at TIMESTAMPTZ,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        snapshot_id BIGINT REFERENCES order_snapshots(id) ON DELETE SET NULL,
+        error TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS scan_jobs_active_item_idx ON scan_jobs (item_id)
+        WHERE status IN ('pending', 'running');
+
       CREATE TABLE IF NOT EXISTS order_entries (
         id BIGSERIAL PRIMARY KEY,
         snapshot_id BIGINT NOT NULL REFERENCES order_snapshots(id) ON DELETE CASCADE,
         slot SMALLINT NOT NULL,
-        price BIGINT NOT NULL CHECK (price > 0),
+        price NUMERIC NOT NULL CHECK (price > 0),
         delivered BIGINT NOT NULL CHECK (delivered >= 0),
         total BIGINT NOT NULL CHECK (total > 0),
         remaining BIGINT NOT NULL CHECK (remaining = total - delivered AND remaining >= 0),
         UNIQUE (snapshot_id, slot)
       );
 
-      CREATE OR REPLACE VIEW order_price_levels AS
+      DROP VIEW IF EXISTS order_price_opportunities;
+      DROP VIEW IF EXISTS order_price_levels;
+      ALTER TABLE order_snapshots ALTER COLUMN best_price TYPE NUMERIC USING best_price::numeric;
+      ALTER TABLE order_entries ALTER COLUMN price TYPE NUMERIC USING price::numeric;
+
+      CREATE VIEW order_price_levels AS
       SELECT s.id AS snapshot_id, s.bot_id, s.item_id, s.observed_at, e.price,
              SUM(e.remaining)::bigint AS remaining_volume,
              SUM(e.delivered)::bigint AS delivered,
@@ -51,14 +111,14 @@ function createDatabase(connectionString) {
       FROM order_snapshots s JOIN order_entries e ON e.snapshot_id = s.id
       GROUP BY s.id, s.bot_id, s.item_id, s.observed_at, e.price;
 
-      CREATE OR REPLACE VIEW order_price_opportunities AS
+      CREATE VIEW order_price_opportunities AS
       WITH compared AS (
         SELECT level.*,
           LAG(observed_at) OVER history AS previous_observed_at,
           LAG(delivered) OVER history AS previous_delivered,
           LAG(total) OVER history AS previous_total
         FROM order_price_levels level
-        WINDOW history AS (PARTITION BY bot_id, item_id, price ORDER BY observed_at)
+        WINDOW history AS (PARTITION BY item_id, price ORDER BY observed_at, snapshot_id)
       )
       SELECT compared.*,
         COALESCE(SUM(remaining_volume) OVER (
@@ -66,7 +126,7 @@ function createDatabase(connectionString) {
           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
         ), 0)::bigint AS higher_price_queue,
         CASE WHEN total = previous_total AND delivered >= previous_delivered
-                    AND observed_at > previous_observed_at
+                    AND observed_at - previous_observed_at >= interval '1 second'
           THEN (delivered - previous_delivered)::double precision * 60.0 /
                EXTRACT(EPOCH FROM observed_at - previous_observed_at)
           ELSE NULL END AS fill_velocity_per_minute
@@ -86,6 +146,131 @@ function createDatabase(connectionString) {
       RETURNING value, updated_at
     `, [JSON.stringify(value)]);
     return { ...result.rows[0].value, updatedAt: result.rows[0].updated_at };
+  }
+
+  async function seedLegacyAccount(account) {
+    if (!account) return;
+    await pool.query(`
+      INSERT INTO minecraft_accounts (id, label, username, auth_type, profile_key)
+      SELECT gen_random_uuid(), 'Collector 1', $1, $2, gen_random_uuid()
+      WHERE NOT EXISTS (SELECT 1 FROM minecraft_accounts)
+      ON CONFLICT DO NOTHING
+    `, [account.username, account.auth]);
+  }
+
+  async function accounts() {
+    const result = await pool.query(`
+      SELECT a.id, a.label, a.username, a.auth_type AS "authType", a.enabled,
+             COALESCE(CASE WHEN s.heartbeat_at < now() - interval '30 seconds' THEN 'collector_offline' ELSE s.state END,
+               'disconnected') AS state,
+             s.minecraft_username AS "minecraftUsername", s.heartbeat_at AS "heartbeatAt",
+             s.connected_at AS "connectedAt", s.last_scan_at AS "lastScanAt",
+             s.current_item_id AS "currentItemId", s.last_error AS "lastError"
+      FROM minecraft_accounts a LEFT JOIN minecraft_account_status s ON s.account_id = a.id
+      ORDER BY a.created_at
+    `);
+    return result.rows;
+  }
+
+  async function account(id) {
+    const result = await pool.query(`SELECT id, label, username, auth_type AS "authType", enabled,
+      profile_key AS "profileKey" FROM minecraft_accounts WHERE id = $1`, [id]);
+    return result.rows[0] || null;
+  }
+
+  async function createAccount({ id, label, username, authType, profileKey }) {
+    const result = await pool.query(`INSERT INTO minecraft_accounts
+      (id, label, username, auth_type, profile_key) VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, label, username, auth_type AS "authType", enabled`,
+    [id, label, username, authType, profileKey]);
+    return result.rows[0];
+  }
+
+  async function updateAccount(id, { label, username, authType, enabled }) {
+    const result = await pool.query(`UPDATE minecraft_accounts SET label=$2, username=$3, auth_type=$4,
+      enabled=$5, updated_at=now() WHERE id=$1 RETURNING id, label, username, auth_type AS "authType", enabled`,
+    [id, label, username, authType, enabled]);
+    return result.rows[0] || null;
+  }
+
+  async function deleteAccount(id) {
+    return (await pool.query("DELETE FROM minecraft_accounts WHERE id=$1 RETURNING id", [id])).rowCount > 0;
+  }
+
+  async function addAccountCommand(accountId, command) {
+    const result = await pool.query(`INSERT INTO minecraft_account_commands (account_id, command)
+      VALUES ($1,$2) RETURNING id, status`, [accountId, command]);
+    return result.rows[0];
+  }
+
+  async function claimAccountCommands() {
+    const result = await pool.query(`UPDATE minecraft_account_commands SET status='running', claimed_at=now()
+      WHERE id IN (SELECT id FROM minecraft_account_commands WHERE status='pending' ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 10)
+      RETURNING id, account_id AS "accountId", command`);
+    return result.rows;
+  }
+
+  async function finishAccountCommand(id, error = null) {
+    await pool.query(`UPDATE minecraft_account_commands SET status=$2, error=$3, finished_at=now() WHERE id=$1`,
+      [id, error ? "failed" : "succeeded", error]);
+  }
+
+  async function putAccountStatus(accountId, state, details = {}) {
+    await pool.query(`INSERT INTO minecraft_account_status
+      (account_id,state,minecraft_username,heartbeat_at,connected_at,last_scan_at,current_item_id,last_error)
+      VALUES ($1,$2,$3,now(),CASE WHEN $2='connected' THEN now() END,$4,$5,$6)
+      ON CONFLICT (account_id) DO UPDATE SET state=$2, minecraft_username=COALESCE($3,minecraft_account_status.minecraft_username),
+      heartbeat_at=now(), connected_at=CASE WHEN $2='connected' THEN COALESCE(minecraft_account_status.connected_at,now()) ELSE minecraft_account_status.connected_at END,
+      last_scan_at=COALESCE($4,minecraft_account_status.last_scan_at), current_item_id=$5, last_error=$6`,
+    [accountId, state, details.minecraftUsername || null, details.lastScanAt || null,
+      details.currentItemId || null, details.lastError || null]);
+  }
+
+  async function putLoginChallenge(accountId, data) {
+    const expires = new Date(Date.now() + Number(data.expires_in || 900) * 1000);
+    await pool.query(`INSERT INTO minecraft_login_challenges (account_id,verification_uri,user_code,expires_at)
+      VALUES ($1,$2,$3,$4) ON CONFLICT (account_id) DO UPDATE SET verification_uri=$2,user_code=$3,expires_at=$4,updated_at=now()`,
+    [accountId, data.verification_uri, data.user_code, expires]);
+  }
+
+  async function loginChallenge(accountId) {
+    const result = await pool.query(`SELECT verification_uri AS "verificationUri", user_code AS "userCode",
+      expires_at AS "expiresAt" FROM minecraft_login_challenges WHERE account_id=$1 AND expires_at>now()`, [accountId]);
+    return result.rows[0] || null;
+  }
+
+  async function clearLoginChallenge(accountId) { await pool.query("DELETE FROM minecraft_login_challenges WHERE account_id=$1", [accountId]); }
+
+  async function enqueueScan({ itemId, query, source }) {
+    const result = await pool.query(`INSERT INTO scan_jobs (item_id,search_query,source) VALUES ($1,$2,$3)
+      ON CONFLICT (item_id) WHERE status IN ('pending','running') DO UPDATE SET item_id=EXCLUDED.item_id
+      RETURNING id, item_id AS "itemId", source, status`, [itemId, query, source]);
+    return result.rows[0];
+  }
+
+  async function claimScan(accountId) {
+    const result = await pool.query(`UPDATE scan_jobs SET status='running',claimed_by=$1,claimed_at=now(),attempts=attempts+1
+      WHERE id=(SELECT id FROM scan_jobs WHERE status='pending' AND available_at<=now() ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
+      RETURNING id,item_id AS "itemId",search_query AS query`, [accountId]);
+    return result.rows[0] || null;
+  }
+
+  async function finishScan(id, snapshotId, error = null) {
+    await pool.query(`UPDATE scan_jobs SET status=$2,snapshot_id=$3,error=$4,finished_at=now() WHERE id=$1`,
+      [id, error ? "failed" : "succeeded", snapshotId, error]);
+  }
+
+  async function scanJob(id) {
+    const result = await pool.query(`SELECT id,item_id AS "itemId",source,status,claimed_by AS "claimedBy",
+      snapshot_id AS "snapshotId",error,created_at AS "createdAt",finished_at AS "finishedAt" FROM scan_jobs WHERE id=$1`, [id]);
+    return result.rows[0] || null;
+  }
+
+  async function recoverCollectorWork() {
+    await pool.query(`UPDATE scan_jobs SET status='pending',claimed_by=NULL,claimed_at=NULL,error=NULL
+      WHERE status='running';
+      UPDATE minecraft_account_commands SET status='pending',claimed_at=NULL,error=NULL
+      WHERE status='running';`);
   }
 
   async function addSnapshot({ botId, itemId, query, observedAt, orders }) {
@@ -117,12 +302,33 @@ function createDatabase(connectionString) {
 
   async function snapshots(itemId, limit) {
     const result = await pool.query(`
-      SELECT id, bot_id AS "botId", item_id AS "itemId", search_query AS query,
-             observed_at AS "observedAt", best_price AS "bestPrice",
-             best_price_volume AS "bestPriceVolume", total_volume AS "totalVolume",
-             weighted_price AS "weightedPrice", fill_ratio AS "fillRatio", order_count AS "orderCount"
-      FROM order_snapshots WHERE ($1::text IS NULL OR item_id = $1)
-      ORDER BY observed_at DESC LIMIT $2
+      SELECT snapshot.id, snapshot.bot_id AS "botId", snapshot.item_id AS "itemId",
+             snapshot.search_query AS query, snapshot.observed_at AS "observedAt",
+             snapshot.best_price AS "bestPrice",
+             snapshot.best_price_volume AS "bestPriceVolume",
+             snapshot.total_volume AS "totalVolume",
+             snapshot.weighted_price AS "weightedPrice",
+             snapshot.fill_ratio AS "fillRatio",
+             best.fill_ratio AS "bestPriceFillRatio",
+             best.order_count AS "bestPriceOrderCount",
+             active.average_fill_ratio AS "activeOrderFillRatio",
+             active.order_count AS "activeOrderCount",
+             snapshot.order_count AS "orderCount"
+      FROM order_snapshots snapshot
+      LEFT JOIN LATERAL (
+        SELECT SUM(entry.delivered)::double precision / NULLIF(SUM(entry.total), 0) AS fill_ratio,
+               COUNT(*)::integer AS order_count
+        FROM order_entries entry
+        WHERE entry.snapshot_id = snapshot.id AND entry.price = snapshot.best_price
+      ) best ON true
+      LEFT JOIN LATERAL (
+        SELECT AVG(entry.delivered::double precision / entry.total) AS average_fill_ratio,
+               COUNT(*)::integer AS order_count
+        FROM order_entries entry
+        WHERE entry.snapshot_id = snapshot.id AND entry.delivered > 0
+      ) active ON true
+      WHERE ($1::text IS NULL OR snapshot.item_id = $1)
+      ORDER BY snapshot.observed_at DESC LIMIT $2
     `, [itemId || null, limit]);
     return result.rows;
   }
@@ -140,7 +346,10 @@ function createDatabase(connectionString) {
     return result.rows;
   }
 
-  return { initialize, getConfig, putConfig, addSnapshot, snapshots, opportunities, close: () => pool.end() };
+  return { initialize, getConfig, putConfig, seedLegacyAccount, accounts, account, createAccount, updateAccount,
+    deleteAccount, addAccountCommand, claimAccountCommands, finishAccountCommand, putAccountStatus,
+    putLoginChallenge, loginChallenge, clearLoginChallenge, enqueueScan, claimScan, finishScan, scanJob, recoverCollectorWork,
+    addSnapshot, snapshots, opportunities, close: () => pool.end() };
 }
 
 module.exports = { createDatabase };

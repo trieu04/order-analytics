@@ -5,14 +5,13 @@ thực thi `/order <item>`, đọc duy nhất `Orders (Page 1)` và lưu lịch 
 khối lượng order vào PostgreSQL để truy vấn bằng Grafana hoặc REST API.
 
 ```text
-Minecraft server → Mineflayer collector → PostgreSQL → Grafana
-                         ↑
-                  Config UI / REST
+Minecraft server ← Mineflayer workers → PostgreSQL ← Express API / UI
 ```
 
 ## Chức năng
 
-- Đăng nhập bằng Microsoft device code hoặc offline authentication.
+- Thêm và đăng nhập nhiều account bằng Microsoft device code hoặc offline authentication ngay trên UI.
+- Express API và Minecraft collector chạy thành hai process độc lập.
 - Quét tuần tự nhiều item, không mở đồng thời nhiều container.
 - Parse `price`, `delivered`, `total` và `remaining` từ lore.
 - Tổng hợp best price, best-price volume, total volume, weighted price và fill ratio.
@@ -39,8 +38,6 @@ Chỉnh tối thiểu:
 ```env
 MC_HOST=play.example.com
 MC_PORT=25565
-MC_USERNAME=email@example.com
-MC_AUTH=microsoft
 MC_VERSION=false
 SERVICE_PORT_API=3010
 SERVICE_PORT_PG=55432
@@ -54,13 +51,13 @@ ITEMS=[{"id":"minecraft:redstone_block","query":"redstone block"}]
 Khởi động:
 
 ```bash
-docker compose --profile collector up -d --build
+docker compose up -d --build
 docker compose logs -f collector
 ```
 
-Lần đăng nhập Microsoft đầu tiên, log sẽ hiện URL và device code. Token được
-giữ trong volume `auth-profiles`. Mở UI tại
-[http://localhost:3010](http://localhost:3010).
+Mở UI tại [http://localhost:3010](http://localhost:3010), thêm account rồi bấm
+Login. UI sẽ hiện URL và device code Microsoft. Token chỉ được giữ trong volume
+`auth-profiles`; Express API không đọc volume này.
 
 ## Chạy trực tiếp
 
@@ -71,6 +68,8 @@ set -a
 source .env
 set +a
 npm start
+# terminal khác
+npm run start:collector
 ```
 
 Dùng `npm run dev` để tự khởi động lại khi sửa source.
@@ -85,10 +84,8 @@ Các giá trị kết nối đọc từ environment và cần restart khi thay �
 |---|---:|---|
 | `MC_HOST` | bắt buộc | Minecraft server host |
 | `MC_PORT` | `25565` | Minecraft server port |
-| `MC_USERNAME` | bắt buộc | Email Microsoft hoặc offline username |
-| `MC_AUTH` | `microsoft` | `microsoft` hoặc `offline` |
 | `MC_VERSION` | `false` | Tự nhận protocol hoặc version như `1.21.4` |
-| `MC_PROFILES_FOLDER` | `./profiles` | Authentication cache |
+| `MC_PROFILES_FOLDER` | `./profiles` | Thư mục gốc authentication cache của collector |
 | `DATABASE_URL` | PostgreSQL local | Database connection string |
 | `API_PORT` | `3010` | HTTP/UI port |
 
@@ -119,6 +116,7 @@ Các giá trị sau được seed từ `.env` khi database chưa có config, sau
 lý tại UI hoặc `PUT /config`:
 
 - Bật/tắt scheduler.
+- Danh sách Minecraft account và thao tác login/disconnect.
 - Chu kỳ từ 10 giây đến 24 giờ.
 - Thời gian chờ GUI từ 0 đến 10 giây.
 - Tối đa 200 item, query và trạng thái enable riêng.
@@ -132,10 +130,14 @@ API không có authentication. Compose mặc định chỉ bind vào loopback.
 | Method | Endpoint | Công dụng |
 |---|---|---|
 | GET | `/` | Config UI |
-| GET | `/health` | Trạng thái bot và lần quét gần nhất |
+| GET | `/health` | Trạng thái API/database |
+| GET/POST | `/minecraft/accounts` | Danh sách/thêm account |
+| POST | `/minecraft/accounts/:id/login` | Yêu cầu collector login |
+| POST | `/minecraft/accounts/:id/disconnect` | Ngắt một account |
 | GET/PUT | `/config` | Đọc/lưu cấu hình động |
-| POST | `/scan` | Quét item tùy ý |
-| POST | `/scan/:itemId` | Quét item đã cấu hình |
+| POST | `/scan` | Xếp job quét item tùy ý |
+| POST | `/scan/:itemId` | Xếp job quét item đã cấu hình |
+| GET | `/scan-jobs/:id` | Xem trạng thái job |
 | GET | `/snapshots` | Danh sách snapshot |
 | GET | `/opportunities/:itemId` | Price ladder và cơ hội đặt giá |
 
@@ -166,9 +168,9 @@ weighted_price = Σ(price × remaining) / Σ(remaining)
 higher_price_queue(P) = Σ(remaining tại price > P)
 ```
 
-`fill_velocity_per_minute` chỉ được tính khi tổng quantity của price bucket
-không đổi giữa hai snapshot liên tiếp, tránh xem order mới hoặc order bị đẩy
-khỏi trang 1 là volume đã fill.
+`fill_velocity_per_minute` được so sánh theo `item_id, price`, không phụ thuộc
+account thực hiện scan. Chỉ tính khi tổng quantity của price bucket không đổi
+và hai snapshot cách nhau ít nhất một giây, tránh false positive.
 
 Kết nối Grafana local:
 
@@ -193,7 +195,7 @@ npm test
 node --check src/index.js
 node --check src/collector.js
 docker compose config
-docker compose --profile collector build collector
+docker compose build api collector
 ```
 
 ## Giới hạn

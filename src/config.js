@@ -18,16 +18,16 @@ function loadConfig() {
   const auth = String(process.env.MC_AUTH || "microsoft").toLowerCase();
   if (!["microsoft", "offline"].includes(auth)) throw new Error("MC_AUTH must be microsoft or offline");
   const username = String(process.env.MC_USERNAME || "").trim();
-  if (!username) throw new Error("MC_USERNAME is required");
   const rawVersion = String(process.env.MC_VERSION || "false").trim();
 
   return {
     minecraft: {
       host: String(process.env.MC_HOST || "localhost"),
-      port: number("MC_PORT", 25565, 1), username, auth,
+      port: number("MC_PORT", 25565, 1),
       version: rawVersion === "false" || rawVersion === "auto" ? false : rawVersion,
       profilesFolder: process.env.MC_PROFILES_FOLDER || "./profiles"
     },
+    legacyAccount: username ? { username, auth } : null,
     databaseUrl: process.env.DATABASE_URL ||
       "postgres://order_analytics:order_analytics@127.0.0.1:55432/order_analytics",
     apiPort: number("API_PORT", 3010, 1),

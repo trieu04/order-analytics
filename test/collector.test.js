@@ -19,7 +19,7 @@ function fakeBot() {
       inventoryStart: 0,
       slots: []
     };
-    setTimeout(() => { bot.currentWindow = window; }, 10);
+    setTimeout(() => { bot.currentWindow = window; bot.emit("windowOpen", window); }, 10);
   };
   bot.closeWindow = window => {
     bot.closedWindow = window;
@@ -29,7 +29,7 @@ function fakeBot() {
   return bot;
 }
 
-test("polls currentWindow without relying on windowOpen", async () => {
+test("registers and removes windowOpen listener around the order command", async () => {
   const bot = fakeBot();
   const collector = createCollector({
     minecraft: { host: "localhost", port: 25565 },
@@ -60,7 +60,7 @@ test("only stores order rows whose stack id matches the requested item", async (
   let stored;
   bot.chat = command => {
     bot.lastCommand = command;
-    setTimeout(() => { bot.currentWindow = {
+    setTimeout(() => { const window = {
       id: 4,
       title: "Orders (Page 1)",
       inventoryStart: 2,
@@ -68,7 +68,7 @@ test("only stores order rows whose stack id matches the requested item", async (
         { name: "stone", customLore: ["$ 2K each", "0/10 Delivered"] },
         { name: "dirt", customLore: ["$ 9K each", "0/99 Delivered"] }
       ]
-    }; }, 10);
+    }; bot.currentWindow = window; bot.emit("windowOpen", window); }, 10);
   };
   const collector = createCollector({
     minecraft: { host: "localhost", port: 25565 },

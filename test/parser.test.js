@@ -32,6 +32,15 @@ test("reads prismarine Item customLore and parses order progress", () => {
   });
 });
 
+test("preserves decimal prices from order lore", () => {
+  assert.deepEqual(parseOrderLore(["$ 12.5 each", "2/10 Delivered"]), {
+    price: 12.5, delivered: 2, total: 10, remaining: 8
+  });
+  assert.deepEqual(parseOrderLore(["$ 1,234.5 each", "0/10 Delivered"]), {
+    price: 1234.5, delivered: 0, total: 10, remaining: 10
+  });
+});
+
 test("summarizes best price and remaining market volume", () => {
   const result = summarize([
     { price: 1800, delivered: 451, total: 2000, remaining: 1549 },
@@ -46,4 +55,5 @@ test("summarizes best price and remaining market volume", () => {
 test("rejects malformed or over-delivered order", () => {
   assert.equal(parseOrderLore(["$ 1K each", "2k/1k Delivered"]), null);
   assert.equal(parseOrderLore(["$ 1K each"]), null);
+  assert.equal(parseOrderLore(["$ 1.2.3 each", "0/10 Delivered"]), null);
 });

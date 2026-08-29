@@ -41,11 +41,23 @@ function compactNumber(value) {
   if (!match) return null;
   const suffix = (match[2] || "").toUpperCase();
   let raw = match[1].replace(/[ _]/g, "");
-  if (suffix && /[.,]\d{1,2}$/.test(raw)) raw = raw.replace(",", ".");
-  else raw = raw.replace(/[,.]/g, "");
+  if (/^\d{1,3}(?:[,.]\d{3})+$/.test(raw)) {
+    raw = raw.replace(/[,.]/g, "");
+  } else if (/^\d+[,.]\d{1,2}$/.test(raw)) {
+    raw = raw.replace(",", ".");
+  } else if (/^\d{1,3}(?:,\d{3})+\.\d{1,2}$/.test(raw)) {
+    raw = raw.replace(/,/g, "");
+  } else if (/^\d{1,3}(?:\.\d{3})+,\d{1,2}$/.test(raw)) {
+    raw = raw.replace(/\./g, "").replace(",", ".");
+  } else if (!/^\d+$/.test(raw)) {
+    return null;
+  }
   const scale = { K: 1_000, M: 1_000_000, B: 1_000_000_000 }[suffix] || 1;
-  const parsed = Math.round(Number(raw) * scale);
-  return Number.isSafeInteger(parsed) ? parsed : null;
+  const parsed = Number(raw) * scale;
+  const valid = suffix
+    ? Number.isSafeInteger(parsed)
+    : Number.isFinite(parsed) && parsed <= Number.MAX_SAFE_INTEGER;
+  return valid ? parsed : null;
 }
 
 function itemLore(item) {
@@ -67,7 +79,7 @@ function parseOrderLore(lines) {
       total = compactNumber(progress[2]);
     }
   }
-  if (!Number.isSafeInteger(price) || price <= 0 || !Number.isSafeInteger(delivered) ||
+  if (!Number.isFinite(price) || price <= 0 || !Number.isSafeInteger(delivered) ||
       delivered < 0 || !Number.isSafeInteger(total) || total <= 0 || delivered > total) return null;
   return { price, delivered, total, remaining: total - delivered };
 }

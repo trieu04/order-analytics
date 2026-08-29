@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-order_analytics}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-order_analytics}
     ports:
-      - "${SERVICE_PORT_PG:-55432}:5432"
+      - "127.0.0.1:${SERVICE_PORT_PG:-55432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -18,8 +18,22 @@ services:
       timeout: 3s
       retries: 10
 
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${SERVICE_DATABASE_URL:-postgres://order_analytics:order_analytics@postgres:5432/order_analytics}
+    ports:
+      - "127.0.0.1:${SERVICE_PORT_API:-3010}:${API_PORT:-3010}"
+
   collector:
     build: .
+    command: ["node", "src/collector-main.js"]
     restart: unless-stopped
     depends_on:
       postgres:
@@ -29,8 +43,6 @@ services:
     environment:
       MC_PROFILES_FOLDER: /app/profiles
       DATABASE_URL: ${SERVICE_DATABASE_URL:-postgres://order_analytics:order_analytics@postgres:5432/order_analytics}
-    ports:
-      - "${SERVICE_PORT_API:-3010}:${API_PORT:-3010}"
     volumes:
       - auth-profiles:/app/profiles
 

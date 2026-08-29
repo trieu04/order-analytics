@@ -4,4 +4,4 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY src ./src
 EXPOSE 3010
-CMD ["node", "src/index.js"]
+CMD ["node", "src/api.js"]
