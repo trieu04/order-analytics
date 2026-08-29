@@ -54,7 +54,7 @@ async function main() {
   await database.initialize();
   await database.seedLegacyAccount(config.legacyAccount);
   const defaults = normalizeRuntimeConfig({ scanEnabled: true, scanIntervalSeconds: config.scanIntervalMs / 1000,
-    scanSettleMs: config.scanSettleMs, items: config.items });
+    scanSettleMs: config.scanSettleMs, scanDelayMs: config.scanDelayMs, items: config.items });
   const stored = await database.getConfig();
   let runtimeConfig = normalizeRuntimeConfig(stored || defaults, defaults);
   if (!stored) await database.putConfig(runtimeConfig);

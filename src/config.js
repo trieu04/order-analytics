@@ -35,6 +35,7 @@ function loadConfig() {
     internalApiUrl: process.env.INTERNAL_API_URL || `http://127.0.0.1:${apiPort}`,
     scanIntervalMs: number("SCAN_INTERVAL_SECONDS", 300, 10) * 1000,
     scanSettleMs: number("SCAN_SETTLE_MS", 1200, 0),
+    scanDelayMs: number("SCAN_DELAY_MS", 2000, 0),
     items
   };
 }

@@ -7,11 +7,22 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const PRE_SCAN_BASE_DELAY_MS = 100;
 const PRE_SCAN_JITTER_MIN_MS = -100;
 const PRE_SCAN_JITTER_MAX_MS = 250;
+const RECONNECT_BASE_DELAY_MS = 10_000;
+const RECONNECT_MAX_DELAY_MS = 300_000;
+
+function reconnectDelayMs(attempt) {
+  const safeAttempt = Number.isSafeInteger(attempt) && attempt > 0 ? attempt : 1;
+  return Math.min(RECONNECT_BASE_DELAY_MS * (2 ** (safeAttempt - 1)), RECONNECT_MAX_DELAY_MS);
+}
 
 function randomizedPreScanDelayMs(random = Math.random) {
   const jitterRange = PRE_SCAN_JITTER_MAX_MS - PRE_SCAN_JITTER_MIN_MS + 1;
   const jitterMs = PRE_SCAN_JITTER_MIN_MS + Math.floor(random() * jitterRange);
   return PRE_SCAN_BASE_DELAY_MS + jitterMs;
+}
+
+function randomizedConfiguredDelayMs(configuredMs, random = Math.random) {
+  return Math.round(configuredMs * (0.75 + random() * 0.5));
 }
 
 function logText(value) {
@@ -34,6 +45,7 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
   let lastScan = null;
   let settleMs = scanSettleMs;
   let stopped = false;
+  let reconnectAttempt = 0;
 
   function connect() {
     if (stopped) return;
@@ -50,6 +62,7 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
     onState("connecting");
     bot.once("spawn", () => {
       ready = true;
+      reconnectAttempt = 0;
       onState("connected", { minecraftUsername: bot.username });
       logger.log(`[minecraft] Connected as ${bot.username} to ${minecraft.host}:${minecraft.port}`);
     });
@@ -62,9 +75,11 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
     bot.once("end", reason => {
       ready = false;
       if (stopped) return;
+      reconnectAttempt++;
+      const delayMs = reconnectDelayMs(reconnectAttempt);
       onState("reconnecting", { lastError: String(reason) });
-      logger.error(`[minecraft] Disconnected: ${reason}; reconnecting in 10s`);
-      reconnectTimer = setTimeout(connect, 10_000);
+      logger.error(`[minecraft] Disconnected: ${reason}; reconnecting in ${delayMs / 1000}s`);
+      reconnectTimer = setTimeout(connect, delayMs);
     });
   }
 
@@ -103,7 +118,7 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
     const window = await windowPromise;
     logger.log(`[minecraft] Action: opened ${logText(window.title)}`);
     try {
-      await wait(settleMs);
+      await wait(randomizedConfiguredDelayMs(settleMs));
       const orders = [];
       for (let slot = 0; slot < window.inventoryStart; slot++) {
         const stack = window.slots[slot];
@@ -152,4 +167,5 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
   };
 }
 
-module.exports = { createCollector, randomizedPreScanDelayMs, stackMatchesItemId };
+module.exports = { createCollector, randomizedPreScanDelayMs, randomizedConfiguredDelayMs,
+  reconnectDelayMs, stackMatchesItemId };

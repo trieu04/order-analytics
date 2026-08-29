@@ -119,7 +119,8 @@ lý tại UI hoặc `PUT /config`:
 - Bật/tắt scheduler.
 - Danh sách Minecraft account và thao tác login/disconnect.
 - Chu kỳ từ 10 giây đến 24 giờ.
-- Thời gian chờ GUI từ 0 đến 10 giây.
+- Thời gian chờ GUI từ 0 đến 10 giây, random 75%–125%.
+- Thời gian nghỉ giữa hai lần quét từ 0 đến 60 giây, random 75%–125%.
 - Tối đa 200 item, query và trạng thái enable riêng.
 
 Cấu hình lưu trong `app_config` và áp dụng ngay sau khi Save.

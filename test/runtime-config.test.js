@@ -6,16 +6,17 @@ const { normalizeRuntimeConfig } = require("../src/runtime-config");
 
 test("normalizes dynamic scheduler and item configuration", () => {
   assert.deepEqual(normalizeRuntimeConfig({
-    scanEnabled: false, scanIntervalSeconds: 60, scanSettleMs: 800, marketPriceFloorRatio: 0.85,
+    scanEnabled: false, scanIntervalSeconds: 60, scanSettleMs: 800, scanDelayMs: 2400, marketPriceFloorRatio: 0.85,
     items: [{ id: "minecraft:redstone_block", query: " redstone block ", enabled: false }]
   }), {
-    scanEnabled: false, scanIntervalSeconds: 60, scanSettleMs: 800, marketPriceFloorRatio: 0.85,
+    scanEnabled: false, scanIntervalSeconds: 60, scanSettleMs: 800, scanDelayMs: 2400, marketPriceFloorRatio: 0.85,
     items: [{ id: "minecraft:redstone_block", query: "redstone block", enabled: false }]
   });
 });
 
 test("rejects unsafe interval and duplicate items", () => {
   assert.throws(() => normalizeRuntimeConfig({ scanIntervalSeconds: 2, items: [] }), /scanIntervalSeconds/);
+  assert.throws(() => normalizeRuntimeConfig({ scanDelayMs: 60001, items: [] }), /scanDelayMs/);
   assert.throws(() => normalizeRuntimeConfig({ marketPriceFloorRatio: 1.1, items: [] }), /marketPriceFloorRatio/);
   assert.throws(() => normalizeRuntimeConfig({ items: [
     { id: "minecraft:stone", query: "stone" }, { id: "minecraft:stone", query: "stone 2" }

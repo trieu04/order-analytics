@@ -3,7 +3,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
-const { createCollector, randomizedPreScanDelayMs, stackMatchesItemId } = require("../src/collector");
+const { createCollector, randomizedPreScanDelayMs, randomizedConfiguredDelayMs,
+  reconnectDelayMs, stackMatchesItemId } = require("../src/collector");
 
 function fakeBot() {
   const bot = new EventEmitter();
@@ -58,6 +59,19 @@ test("matches Mineflayer stack names against namespaced item ids", () => {
 test("adds bounded jitter before starting a scan", () => {
   assert.equal(randomizedPreScanDelayMs(() => 0), 0);
   assert.equal(randomizedPreScanDelayMs(() => 0.999999), 350);
+});
+
+test("randomizes configured GUI and between-scan delays from 75 to 125 percent", () => {
+  assert.equal(randomizedConfiguredDelayMs(2000, () => 0), 1500);
+  assert.equal(randomizedConfiguredDelayMs(2000, () => 0.5), 2000);
+  assert.equal(randomizedConfiguredDelayMs(2000, () => 1), 2500);
+  assert.equal(randomizedConfiguredDelayMs(0, () => 1), 0);
+});
+
+test("uses capped exponential reconnect delays", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map(reconnectDelayMs), [
+    10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000
+  ]);
 });
 
 test("only stores order rows whose stack id matches the requested item", async () => {

@@ -4,8 +4,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { loadConfig } = require("./config");
 const { createDatabase } = require("./database");
-const { createCollector } = require("./collector");
+const { createCollector, randomizedConfiguredDelayMs } = require("./collector");
 const { createObservationClient } = require("./observation-client");
+const { normalizeRuntimeConfig } = require("./runtime-config");
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -30,7 +31,9 @@ async function main() {
         .catch(error => console.error(`[minecraft] ${error.message}`)),
       onAuthCode: data => database.putLoginChallenge(account.id, data)
         .catch(error => console.error(`[minecraft] ${error.message}`)) });
-    workers.set(account.id, { worker, busy: false, currentItemId: null });
+    workers.set(account.id, {
+      worker, busy: false, currentItemId: null, scanDelayMs: config.scanDelayMs, nextScanAt: 0
+    });
     worker.connect();
   }
 
@@ -59,17 +62,23 @@ async function main() {
   }
 
   async function schedule() {
-    const runtime = await database.getConfig();
+    const stored = await database.getConfig();
+    if (!stored) return;
+    const runtime = normalizeRuntimeConfig(stored, { scanSettleMs: config.scanSettleMs,
+      scanDelayMs: config.scanDelayMs });
+    for (const entry of workers.values()) {
+      entry.worker.setScanSettleMs(runtime.scanSettleMs);
+      entry.scanDelayMs = runtime.scanDelayMs;
+    }
     if (!runtime?.scanEnabled || Date.now() < nextScheduledAt) return;
     nextScheduledAt = Date.now() + runtime.scanIntervalSeconds * 1000;
     for (const item of runtime.items.filter(item => item.enabled))
       await database.enqueueScan({ itemId: item.id, query: item.query, source: "scheduled" });
-    for (const entry of workers.values()) entry.worker.setScanSettleMs(runtime.scanSettleMs);
   }
 
   async function dispatch() {
     for (const [accountId, entry] of workers) {
-      if (entry.busy || !entry.worker.status().connected) continue;
+      if (entry.busy || Date.now() < entry.nextScanAt || !entry.worker.status().connected) continue;
       const job = await database.claimScan(accountId);
       if (!job) continue;
       entry.busy = true;
@@ -82,7 +91,11 @@ async function main() {
         await database.finishScan(job.id, null, error.message);
         await database.putAccountStatus(accountId, entry.worker.status().connected ? "connected" : "reconnecting",
           { lastError: error.message });
-      }).finally(() => { entry.busy = false; entry.currentItemId = null; });
+      }).finally(() => {
+        entry.busy = false;
+        entry.currentItemId = null;
+        entry.nextScanAt = Date.now() + randomizedConfiguredDelayMs(entry.scanDelayMs);
+      });
     }
   }
 
