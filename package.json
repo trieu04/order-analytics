@@ -1,0 +1,22 @@
+{
+  "name": "minecraft-order-analytics",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "mineflayer": "^4.38.0",
+    "pg": "^8.16.3"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}

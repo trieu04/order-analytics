@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="vi"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Minecraft Order Analytics</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak]{display:none!important} main{max-width:1100px} header{margin-block:2rem 1rem}
+    header nav ul{align-items:center}.status{white-space:nowrap}.message{min-height:1.6rem;margin:0}
+    .items{display:grid;grid-template-columns:auto minmax(220px,1fr) minmax(180px,1fr) auto auto;gap:.65rem;align-items:center}
+    .items input,.items button{margin-bottom:0}.head{font-weight:600;color:var(--pico-muted-color)}
+    .section-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+    .section-head h2,.section-head select,.section-head button{margin-bottom:0}.section-head select{min-width:260px}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem;margin-block:1rem}
+    .metric{padding:1rem;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)}
+    .metric small{display:block;color:var(--pico-muted-color)}.metric strong{display:block;font-size:1.45rem;margin:.2rem 0}
+    .up{color:#16803c}.down{color:#c52f21}.table-wrap{overflow-x:auto}table{white-space:nowrap}
+    .bar{width:110px;height:.5rem;background:var(--pico-muted-border-color);border-radius:1rem;overflow:hidden}
+    .bar span{display:block;height:100%;background:var(--pico-primary);border-radius:inherit}
+    @media(max-width:700px){.head{display:none}.items{grid-template-columns:auto 1fr auto auto}.items .query{grid-column:2/-1}}
+    @media(max-width:800px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.section-head select{width:100%}}
+    @media(max-width:420px){.metrics{grid-template-columns:1fr}}
+  </style>
+</head><body>
+<main class="container" x-data="configUi()" x-init="load()" x-cloak>
+  <header><nav>
+    <ul><li><hgroup><h1>Order Analytics</h1><p>Cấu hình Mineflayer collector</p></hgroup></li></ul>
+    <ul><li><span class="status" x-text="health.connected ? `Đã kết nối: ${health.username}` : 'Minecraft chưa kết nối'"></span></li></ul>
+  </nav></header>
+
+  <article>
+    <header class="section-head">
+      <hgroup><h2>Thống kê thị trường</h2><p>Snapshot và price ladder gần nhất</p></hgroup>
+      <div role="group">
+        <select x-model="selectedItem" @change="loadStats()" aria-label="Chọn item thống kê">
+          <option value="">Chọn item</option>
+          <template x-for="item in config.items" :key="item.id"><option :value="item.id" x-text="item.id"></option></template>
+        </select>
+        <button class="outline" :aria-busy="statsLoading" :disabled="statsLoading||!selectedItem" @click="loadStats()">Làm mới</button>
+      </div>
+    </header>
+    <div x-show="statsLoading" aria-busy="true">Đang tải thống kê…</div>
+    <template x-if="!statsLoading && latest"><div>
+      <div class="metrics">
+        <div class="metric"><small>Giá tốt nhất</small><strong x-text="formatNumber(latest.bestPrice)"></strong><small :class="changeClass(priceChange)" x-text="formatChange(priceChange)"></small></div>
+        <div class="metric"><small>Volume còn lại</small><strong x-text="formatNumber(latest.totalVolume)"></strong><small :class="changeClass(volumeChange)" x-text="formatChange(volumeChange)"></small></div>
+        <div class="metric"><small>Giá bình quân</small><strong x-text="formatNumber(latest.weightedPrice,2)"></strong><small x-text="`${formatNumber(latest.orderCount)} orders`"></small></div>
+        <div class="metric"><small>Tỷ lệ đã fill</small><strong x-text="formatPercent(latest.fillRatio)"></strong><small x-text="formatDate(latest.observedAt)"></small></div>
+      </div>
+      <h3>Price ladder hiện tại</h3>
+      <div class="table-wrap"><table><thead><tr><th>Giá</th><th>Volume</th><th>Fill</th><th>Queue giá cao hơn</th><th>Velocity/phút</th></tr></thead><tbody>
+        <template x-for="level in opportunities" :key="level.price"><tr>
+          <td x-text="formatNumber(level.price)"></td><td x-text="formatNumber(level.remainingVolume)"></td>
+          <td><span x-text="formatPercent(level.fillRatio)"></span><div class="bar"><span :style="`width:${Math.max(0,Math.min(100,Number(level.fillRatio)*100))}%`"></span></div></td>
+          <td x-text="formatNumber(level.higherPriceQueue)"></td><td x-text="level.fillVelocityPerMinute==null?'Chưa đủ dữ liệu':formatNumber(level.fillVelocityPerMinute,2)"></td>
+        </tr></template>
+      </tbody></table></div>
+      <h3>Lịch sử gần đây</h3>
+      <div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Best price</th><th>Best volume</th><th>Tổng volume</th><th>Giá bình quân</th><th>Fill</th><th>Orders</th></tr></thead><tbody>
+        <template x-for="snapshot in snapshots" :key="snapshot.id"><tr>
+          <td x-text="formatDate(snapshot.observedAt)"></td><td x-text="formatNumber(snapshot.bestPrice)"></td><td x-text="formatNumber(snapshot.bestPriceVolume)"></td>
+          <td x-text="formatNumber(snapshot.totalVolume)"></td><td x-text="formatNumber(snapshot.weightedPrice,2)"></td><td x-text="formatPercent(snapshot.fillRatio)"></td><td x-text="formatNumber(snapshot.orderCount)"></td>
+        </tr></template>
+      </tbody></table></div>
+    </div></template>
+    <p x-show="!statsLoading && selectedItem && !latest"><small>Chưa có snapshot cho item này. Hãy chạy một lần quét.</small></p>
+    <p x-show="!selectedItem"><small>Chọn một item để xem thống kê.</small></p>
+  </article>
+
+  <article><h2>Lịch quét</h2><fieldset class="grid">
+    <label><input type="checkbox" role="switch" x-model="config.scanEnabled"> Bật quét tự động</label>
+    <label>Chu kỳ (giây)<input type="number" min="10" max="86400" x-model.number="config.scanIntervalSeconds"></label>
+    <label>Chờ GUI ổn định (ms)<input type="number" min="0" max="10000" x-model.number="config.scanSettleMs"></label>
+  </fieldset></article>
+
+  <article>
+    <header class="grid"><h2>Items</h2><button class="outline" @click="addItem()">+ Thêm item</button></header>
+    <div class="items head" aria-hidden="true"><span>Bật</span><span>Item ID</span><span>Query `/order`</span><span>Quét</span><span>Xóa</span></div>
+    <template x-for="(item,index) in config.items" :key="index"><div class="items">
+      <input type="checkbox" role="switch" x-model="item.enabled" :aria-label="`Bật ${item.id}`">
+      <input type="text" x-model.trim="item.id" placeholder="minecraft:redstone_block" aria-label="Item ID">
+      <input class="query" type="text" x-model.trim="item.query" placeholder="redstone block" aria-label="Order query">
+      <button class="outline" :aria-busy="scanning===item.id" :disabled="scanning!==null" @click="scan(item)">▶</button>
+      <button class="secondary outline" @click="config.items.splice(index,1)">×</button>
+    </div></template>
+    <p x-show="config.items.length===0"><small>Chưa có item. Thêm item để scheduler bắt đầu thu thập.</small></p>
+  </article>
+
+  <nav><ul>
+    <li><button :aria-busy="saving" :disabled="saving" @click="save()">Lưu cấu hình</button></li>
+    <li><button class="secondary outline" @click="load()">Tải lại</button></li>
+  </ul><ul><li><p class="message" x-text="message"></p></li></ul></nav>
+</main>
+<script>
+function configUi(){return{
+  config:{scanEnabled:true,scanIntervalSeconds:300,scanSettleMs:1200,items:[]},health:{connected:false},message:'',saving:false,scanning:null,statusTimer:null,
+  selectedItem:'',snapshots:[],opportunities:[],statsLoading:false,
+  get latest(){return this.snapshots[0]||null},get previous(){return this.snapshots[1]||null},
+  get priceChange(){return this.delta('bestPrice')},get volumeChange(){return this.delta('totalVolume')},
+  async request(url,options){const response=await fetch(url,options),data=await response.json();if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data},
+  notify(text,error=false){this.message=(error?'Lỗi: ':'')+text},addItem(){this.config.items.push({id:'minecraft:',query:'',enabled:true})},
+  async refreshHealth(){try{this.health=await this.request('/health')}catch(error){this.notify(error.message,true)}},
+  async load(){try{[this.config,this.health]=await Promise.all([this.request('/config'),this.request('/health')]);if(!this.config.items.some(item=>item.id===this.selectedItem))this.selectedItem=this.config.items[0]?.id||'';await this.loadStats();this.notify('');clearInterval(this.statusTimer);this.statusTimer=setInterval(()=>this.refreshHealth(),10000)}catch(error){this.notify(error.message,true)}},
+  async loadStats(){this.snapshots=[];this.opportunities=[];if(!this.selectedItem)return;this.statsLoading=true;try{[this.snapshots,this.opportunities]=await Promise.all([this.request(`/snapshots?itemId=${encodeURIComponent(this.selectedItem)}&limit=20`),this.request(`/opportunities/${encodeURIComponent(this.selectedItem)}`)])}catch(error){this.notify(error.message,true)}finally{this.statsLoading=false}},
+  delta(field){if(!this.latest||!this.previous||this.latest[field]==null||this.previous[field]==null)return null;return Number(this.latest[field])-Number(this.previous[field])},
+  formatNumber(value,digits=0){if(value==null)return '—';return new Intl.NumberFormat('vi-VN',{maximumFractionDigits:digits}).format(Number(value))},
+  formatPercent(value){return value==null?'—':new Intl.NumberFormat('vi-VN',{style:'percent',maximumFractionDigits:1}).format(Number(value))},
+  formatDate(value){return value?new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'medium'}).format(new Date(value)):'—'},
+  formatChange(value){return value==null?'Chưa có lần quét trước':`${value>0?'+':''}${this.formatNumber(value)} so với lần trước`},changeClass(value){return value>0?'up':value<0?'down':''},
+  async save(){this.saving=true;try{this.config=await this.request('/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.config)});delete this.config.updatedAt;this.notify('Đã lưu và áp dụng ngay')}catch(error){this.notify(error.message,true)}finally{this.saving=false}},
+  async scan(item){this.scanning=item.id;try{await this.request(`/scan/${encodeURIComponent(item.id)}`,{method:'POST'});this.selectedItem=item.id;await this.loadStats();this.notify(`Đã quét ${item.id}`)}catch(error){this.notify(error.message,true)}finally{this.scanning=null}}
+}}
+</script></body></html>
