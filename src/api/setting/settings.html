@@ -6,8 +6,10 @@
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
     [x-cloak]{display:none!important}main{max-width:1100px}header{margin-block:2rem 1rem}header nav ul{align-items:center}.message{min-height:1.6rem;margin:0}
-    .items{display:grid;grid-template-columns:auto minmax(220px,1fr) minmax(180px,1fr) auto;gap:.65rem;align-items:center}.items input,.items button{margin-bottom:0}.head{font-weight:600;color:var(--pico-muted-color)}
-    @media(max-width:700px){.head{display:none}.items{grid-template-columns:auto 1fr auto}.items .query{grid-column:2/-1}}
+    .schedule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;align-items:start}.schedule-field{display:grid;grid-template-rows:3em 3rem minmax(2.5em,auto);gap:.35rem;margin:0}.schedule-field>span:first-child{font-weight:500}.schedule-field input{height:3rem;margin:0}.switch-control{display:flex;height:3rem;align-items:center;gap:.5rem}.switch-control input{height:auto}.schedule-field small{margin:0;color:var(--pico-muted-color)}
+    .items-header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.items-header h2,.items-header button{margin:0}.items-header button{width:auto}
+    .items{display:grid;grid-template-columns:64px 40px minmax(200px,1.2fr) minmax(180px,1fr) 76px 44px;gap:.65rem;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--pico-muted-border-color)}.items input,.items button{margin-bottom:0}.head{padding-top:0;font-weight:600;color:var(--pico-muted-color)}.image-slot{display:grid;width:40px;height:40px;place-items:center}.item-image{width:32px;height:32px;image-rendering:pixelated}.item-info{min-width:0}.item-info strong,.item-info small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.move-actions{display:flex;gap:.25rem}.move-actions button,.delete-item{width:36px;height:40px;padding:0}.result{display:flex;width:100%;align-items:center;gap:.75rem;text-align:left;margin-bottom:.5rem}.result span{display:flex;flex-direction:column}.result small{color:var(--pico-muted-color)}
+    @media(max-width:700px){.schedule-grid{grid-template-columns:1fr}.schedule-field{grid-template-rows:auto 3rem auto}.items-header{align-items:stretch;flex-direction:column}.items-header button{width:100%}.head{display:none}.items{grid-template-columns:64px 40px minmax(0,1fr) 76px 44px;grid-template-areas:"toggle image info info info" ". . query move delete"}.enabled-item{grid-area:toggle}.image-slot{grid-area:image}.item-info{grid-area:info}.query{grid-area:query}.move-actions{grid-area:move}.delete-item{grid-area:delete}}
   </style>
 </head><body>
 <main class="container" x-data="settingsUi()" x-init="load()" x-cloak>
@@ -15,31 +17,47 @@
     <ul><li><hgroup><h1>Quản lý cấu hình</h1><p>Scheduler và danh sách item</p></hgroup></li></ul>
     <ul><li><a href="/">Thống kê</a></li><li><a href="/accounts">Tài khoản</a></li><li><a href="/settings" aria-current="page">Cấu hình</a></li></ul>
   </nav></header>
-  <article><h2>Lịch quét</h2><fieldset class="grid">
-    <label><input type="checkbox" role="switch" x-model="config.scanEnabled"> Bật quét tự động</label>
-    <label>Chu kỳ (giây)<input type="number" min="10" max="86400" x-model.number="config.scanIntervalSeconds"></label>
-    <label>Chờ GUI ổn định (ms)<input type="number" min="0" max="10000" x-model.number="config.scanSettleMs"><small>Random 75%–125%</small></label>
-    <label>Nghỉ giữa hai lần quét (ms)<input type="number" min="0" max="60000" x-model.number="config.scanDelayMs"><small>Random 75%–125%; bắt đầu sau khi đóng GUI</small></label>
-    <label>Ngưỡng lọc giá thị trường (tỷ lệ)<input type="number" min="0.01" max="1" step="0.01" x-model.number="config.marketPriceFloorRatio"><small>0.8 = giữ giá từ 80% giá trung bình tạm</small></label>
+  <article><h2>Lịch quét</h2><fieldset class="schedule-grid">
+    <label class="schedule-field"><span>Scheduler</span><span class="switch-control"><input type="checkbox" role="switch" x-model="config.scanEnabled"> Bật quét tự động</span><small>&nbsp;</small></label>
+    <label class="schedule-field"><span>Chu kỳ (giây)</span><input type="number" min="10" max="86400" x-model.number="config.scanIntervalSeconds"><small>&nbsp;</small></label>
+    <label class="schedule-field"><span>Chờ GUI ổn định (ms)</span><input type="number" min="0" max="10000" x-model.number="config.scanSettleMs"><small>Random 75%–125%</small></label>
+    <label class="schedule-field"><span>Nghỉ giữa hai lần quét (ms)</span><input type="number" min="0" max="60000" x-model.number="config.scanDelayMs"><small>Random 75%–125%; bắt đầu sau khi đóng GUI</small></label>
+    <label class="schedule-field"><span>Ngưỡng lọc giá thị trường (tỷ lệ)</span><input type="number" min="0.01" max="1" step="0.01" x-model.number="config.marketPriceFloorRatio"><small>0.8 = giữ giá từ 80% giá trung bình tạm</small></label>
   </fieldset></article>
   <article>
-    <header class="grid"><h2>Items</h2><button class="outline" @click="addItem()">+ Thêm item</button></header>
-    <div class="items head" aria-hidden="true"><span>Bật</span><span>Item ID</span><span>Query `/order`</span><span>Xóa</span></div>
-    <template x-for="(item,index) in config.items" :key="index"><div class="items">
-      <input type="checkbox" role="switch" x-model="item.enabled" :aria-label="`Bật ${item.id}`">
-      <input type="text" x-model.trim="item.id" placeholder="minecraft:redstone_block" aria-label="Item ID">
+    <header class="items-header"><h2>Items</h2><button class="outline" @click="openItemPicker()">+ Thêm item</button></header>
+    <div class="items head" aria-hidden="true"><span>Bật</span><span></span><span>Item</span><span>Query /order</span><span>Thứ tự</span><span>Xóa</span></div>
+    <template x-for="(item,index) in config.items" :key="item.id"><div class="items">
+      <input class="enabled-item" type="checkbox" role="switch" x-model="item.enabled" :aria-label="`Bật ${item.id}`">
+      <span class="image-slot"><img class="item-image" :src="item.image" :alt="item.name||item.id" x-show="item.image"></span>
+      <div class="item-info"><strong x-text="item.name||item.id"></strong><small x-text="item.id" x-show="item.name"></small></div>
       <input class="query" type="text" x-model.trim="item.query" placeholder="redstone block" aria-label="Order query">
-      <button class="secondary outline" @click="config.items.splice(index,1)" :aria-label="`Xóa ${item.id}`">×</button>
+      <span class="move-actions"><button class="secondary outline" @click="moveItem(index,-1)" :disabled="index===0" :aria-label="`Di chuyển ${item.id} lên`">↑</button><button class="secondary outline" @click="moveItem(index,1)" :disabled="index===config.items.length-1" :aria-label="`Di chuyển ${item.id} xuống`">↓</button></span>
+      <button class="secondary outline delete-item" @click="config.items.splice(index,1)" :aria-label="`Xóa ${item.id}`">×</button>
     </div></template>
     <p x-show="config.items.length===0"><small>Chưa có item. Thêm item để scheduler bắt đầu thu thập.</small></p>
   </article>
+  <dialog :open="pickerOpen" @click.self="closeItemPicker()"><article>
+    <header><button aria-label="Đóng" rel="prev" @click="closeItemPicker()"></button><h2>Thêm item</h2></header>
+    <input x-ref="itemSearch" type="search" placeholder="Tìm theo tên hoặc ID…" x-model="itemSearch" @input.debounce.200ms="searchItems()">
+    <p x-show="itemSearching" aria-busy="true">Đang tìm…</p>
+    <template x-for="item in itemResults" :key="item.id"><button class="secondary outline result" @click="insertItem(item)" :disabled="hasItem(item.id)">
+      <img class="item-image" :src="item.image" :alt="item.name"><span><strong x-text="item.name"></strong><small x-text="hasItem(item.id)?`${item.id} · Đã thêm`:item.id"></small></span>
+    </button></template>
+    <p x-show="itemSearch && !itemSearching && itemResults.length===0"><small>Không tìm thấy item phù hợp.</small></p>
+  </article></dialog>
   <nav><ul><li><button :aria-busy="saving" :disabled="saving" @click="save()">Lưu cấu hình</button></li><li><button class="secondary outline" :disabled="saving" @click="load()">Tải lại</button></li></ul><ul><li><p class="message" x-text="message"></p></li></ul></nav>
 </main>
 <script>
 function settingsUi(){return{
-  config:{scanEnabled:true,scanIntervalSeconds:300,scanSettleMs:1200,scanDelayMs:2000,marketPriceFloorRatio:0.8,items:[]},saving:false,message:'',
-  async request(url,options){const response=await fetch(url,options),data=await response.json();if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data},notify(text,error=false){this.message=(error?'Lỗi: ':'')+text},addItem(){this.config.items.push({id:'minecraft:',query:'',enabled:true})},
-  async load(){try{this.config=await this.request('/api/settings');delete this.config.updatedAt;this.notify('')}catch(error){this.notify(error.message,true)}},
-  async save(){this.saving=true;try{this.config=await this.request('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.config)});delete this.config.updatedAt;this.notify('Đã lưu và áp dụng ngay')}catch(error){this.notify(error.message,true)}finally{this.saving=false}}
+  config:{scanEnabled:true,scanIntervalSeconds:300,scanSettleMs:1200,scanDelayMs:2000,marketPriceFloorRatio:0.8,items:[]},saving:false,message:'',pickerOpen:false,itemSearch:'',itemResults:[],itemSearching:false,
+  async request(url,options){const response=await fetch(url,options),data=await response.json();if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data},notify(text,error=false){this.message=(error?'Lỗi: ':'')+text},hasItem(id){return this.config.items.some(item=>item.id===id)},
+  openItemPicker(){this.pickerOpen=true;this.itemSearch='';this.itemResults=[];this.$nextTick(()=>this.$refs.itemSearch.focus())},closeItemPicker(){this.pickerOpen=false},
+  async searchItems(){const search=this.itemSearch.trim();if(!search){this.itemResults=[];return}this.itemSearching=true;try{this.itemResults=await this.request(`/api/settings/items?q=${encodeURIComponent(search)}`)}catch(error){this.notify(error.message,true)}finally{this.itemSearching=false}},
+  insertItem(item){if(!this.hasItem(item.id))this.config.items.push({...item,enabled:true});this.closeItemPicker()},
+  moveItem(index,offset){const target=index+offset;if(target<0||target>=this.config.items.length)return;const [item]=this.config.items.splice(index,1);this.config.items.splice(target,0,item)},
+  async hydrateItems(){const ids=this.config.items.map(item=>item.id).join(',');if(!ids)return;const details=await this.request(`/api/settings/items?ids=${encodeURIComponent(ids)}`),byId=Object.fromEntries(details.map(item=>[item.id,item]));this.config.items=this.config.items.map(item=>({...byId[item.id],...item}))},
+  async load(){try{this.config=await this.request('/api/settings');delete this.config.updatedAt;await this.hydrateItems();this.notify('')}catch(error){this.notify(error.message,true)}},
+  async save(){this.saving=true;try{this.config=await this.request('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.config)});delete this.config.updatedAt;await this.hydrateItems();this.notify('Đã lưu và áp dụng ngay')}catch(error){this.notify(error.message,true)}finally{this.saving=false}}
 }}
 </script></body></html>

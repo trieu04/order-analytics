@@ -16,6 +16,8 @@
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "express": "^5.1.0",
+    "minecraft-assets": "^1.19.0",
+    "minecraft-data": "^3.114.0",
     "mineflayer": "^4.38.0",
     "pg": "^8.16.3"
   },

@@ -8,6 +8,7 @@ const { createAccountRouter, accountInput, accountPage } = require("./account/ro
 const { createAnalyticRouter, dashboardPage, observationInput } = require("./analytic/router");
 const { createSettingRouter, settingPage } = require("./setting/router");
 const { normalizeSetting } = require("./setting/setting");
+const { createItemCatalog } = require("./setting/item-catalog");
 
 const logger = createLogger("api");
 
@@ -27,7 +28,8 @@ async function main() {
   const app = express();
   app.use(express.json({ limit: "64kb" }));
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
-  const settingModule = createSettingRouter(database, initialSetting);
+  const itemCatalog = createItemCatalog(config.minecraft.version);
+  const settingModule = createSettingRouter(database, initialSetting, itemCatalog);
   app.get("/", dashboardPage);
   app.get("/accounts", accountPage);
   app.get("/settings", settingPage);
