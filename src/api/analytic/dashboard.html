@@ -114,7 +114,7 @@ function configUi(){return{
   get latest(){return this.latestSnapshots[0]||null},get previous(){return this.latestSnapshots[1]||null},
   get selectedItemData(){return this.config.items.find(item=>item.id===this.selectedItem)||null},
   get pagedOpportunities(){return this.opportunities.slice((this.ladderPage-1)*this.ladderPageSize,this.ladderPage*this.ladderPageSize)},get pagedSnapshots(){return this.snapshots.slice((this.historyPage-1)*this.historyPageSize,this.historyPage*this.historyPageSize)},
-  get ladderChartValues(){return [...this.opportunities].map(value=>({...value,price:Number(value.price),higherPriceQueue:Number(value.higherPriceQueue)})).sort((a,b)=>b.price-a.price)},
+  get ladderChartValues(){const sampleCount=Math.max(0,Number(this.latest?.marketSampleOrderCount)||0);return [...this.opportunities].map(value=>({...value,price:Number(value.price),higherPriceQueue:Number(value.higherPriceQueue)})).sort((a,b)=>b.price-a.price).slice(0,sampleCount)},
   get historyChartValues(){return [...this.snapshots].map(value=>({...value,time:new Date(value.observedAt).getTime()})).sort((a,b)=>a.time-b.time)},
   get historyPriceExtent(){const values=this.historyChartValues.flatMap(value=>[Number(value.marketMaxPrice),Number(value.marketAveragePrice)]).filter(Number.isFinite);return this.extent(values)},
   get priceChange(){return this.delta('bestPrice')},
