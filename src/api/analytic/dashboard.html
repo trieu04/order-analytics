@@ -22,8 +22,9 @@
     .market-cell .queue{color:var(--pico-color)}.fill-detail{display:flex;justify-content:space-between;gap:.75rem;margin-top:.35rem;font-size:.72rem;color:var(--pico-muted-color);font-variant-numeric:tabular-nums}
     .fill-track{height:3px;margin-top:.2rem;background:var(--pico-muted-border-color);border-radius:4px;overflow:hidden}.fill-track span{display:block;height:100%;background:color-mix(in srgb,var(--pico-primary) 65%,var(--pico-muted-color));border-radius:inherit}
     .up{color:#16803c}.down{color:#c52f21}.table-wrap{overflow-x:auto}table{white-space:nowrap}
-    .bar{width:110px;height:.5rem;background:var(--pico-muted-border-color);border-radius:1rem;overflow:hidden}
+    .bar{width:160px;height:.32rem;background:var(--pico-muted-border-color);border-radius:1rem;overflow:hidden}
     .bar span{display:block;height:100%;background:var(--pico-primary);border-radius:inherit}
+    .ladder-volume{text-align:left;font-variant-numeric:tabular-nums}
     .chart{position:relative;height:360px;margin:1rem 0 1.5rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)}
     .filters,.pagination{display:flex;gap:.6rem;align-items:end;flex-wrap:wrap}.filters label{margin:0}.filters select,.filters input,.pagination button{margin-bottom:0}.pagination{justify-content:flex-end;align-items:center;margin-top:.75rem}.pagination label{display:flex;align-items:center;gap:.5rem;margin:0;white-space:nowrap}.pagination select{width:auto;min-width:5rem;margin:0;padding-block:.45rem}.pagination button{width:auto;padding:.5rem .85rem;white-space:nowrap}.pagination span{font-size:.9rem;color:var(--pico-muted-color);white-space:nowrap}
     @media(max-width:700px){.head{display:none}.items{grid-template-columns:auto 1fr auto auto}.items .query{grid-column:2/-1}}
@@ -70,13 +71,12 @@
         <div class="metric"><small>Quan sát gần nhất</small><strong x-text="formatTime(latest.observedAt)"></strong><small x-text="formatDateOnly(latest.observedAt)"></small></div>
       </div>
       <h3>Price ladder</h3>
-      <p><small>Giá và tổng queue của các mức giá cao hơn tại snapshot mới nhất.</small></p>
-      <div class="chart" x-show="opportunities.length"><canvas x-ref="ladderChart" role="img" aria-label="Biểu đồ Price ladder: giá và queue giá cao hơn"></canvas></div>
+      <p><small>Giá và tổng queue của các mức giá thuộc mẫu tính giá trung bình tại snapshot mới nhất.</small></p>
+      <div class="chart" x-show="ladderChartValues.length"><canvas x-ref="ladderChart" role="img" aria-label="Biểu đồ Price ladder: giá và queue giá cao hơn"></canvas></div>
       <h3>Price ladder hiện tại</h3>
-      <div class="table-wrap"><table><thead><tr><th>Giá</th><th>Volume</th><th>Fill</th><th>Queue giá cao hơn</th><th>Velocity/phút</th></tr></thead><tbody>
+      <div class="table-wrap"><table><thead><tr><th>Giá</th><th class="ladder-volume">Volume</th><th>Queue giá cao hơn</th><th>Velocity/phút</th></tr></thead><tbody>
         <template x-for="level in pagedOpportunities" :key="level.price"><tr>
-          <td x-text="formatNumber(level.price)"></td><td x-text="formatNumber(level.remainingVolume)"></td>
-          <td><span x-text="formatPercent(level.fillRatio)"></span><div class="bar"><span :style="`width:${Math.max(0,Math.min(100,Number(level.fillRatio)*100))}%`"></span></div></td>
+          <td x-text="formatNumber(level.price)"></td><td class="ladder-volume"><div x-text="`${formatNumber(level.delivered)} / ${formatNumber(level.total)}`"></div><div class="bar"><span :style="`width:${Math.max(0,Math.min(100,Number(level.fillRatio)*100))}%`"></span></div></td>
           <td x-text="formatNumber(level.higherPriceQueue)"></td><td x-text="level.fillVelocityPerMinute==null?'Chưa đủ dữ liệu':formatNumber(level.fillVelocityPerMinute,2)"></td>
         </tr></template>
       </tbody></table></div>
@@ -114,7 +114,7 @@ function configUi(){return{
   get latest(){return this.latestSnapshots[0]||null},get previous(){return this.latestSnapshots[1]||null},
   get selectedItemData(){return this.config.items.find(item=>item.id===this.selectedItem)||null},
   get pagedOpportunities(){return this.opportunities.slice((this.ladderPage-1)*this.ladderPageSize,this.ladderPage*this.ladderPageSize)},get pagedSnapshots(){return this.snapshots.slice((this.historyPage-1)*this.historyPageSize,this.historyPage*this.historyPageSize)},
-  get ladderChartValues(){const sampleCount=Math.max(0,Number(this.latest?.marketSampleOrderCount)||0);return [...this.opportunities].map(value=>({...value,price:Number(value.price),higherPriceQueue:Number(value.higherPriceQueue)})).sort((a,b)=>b.price-a.price).slice(0,sampleCount)},
+  get ladderChartValues(){return this.opportunities.filter(value=>value.isMarketSample).map(value=>({...value,price:Number(value.price),higherPriceQueue:Number(value.higherPriceQueue)})).sort((a,b)=>b.price-a.price)},
   get historyChartValues(){return [...this.snapshots].map(value=>({...value,time:new Date(value.observedAt).getTime()})).sort((a,b)=>a.time-b.time)},
   get historyPriceExtent(){const values=this.historyChartValues.flatMap(value=>[Number(value.marketMaxPrice),Number(value.marketAveragePrice)]).filter(Number.isFinite);return this.extent(values)},
   get priceChange(){return this.delta('bestPrice')},

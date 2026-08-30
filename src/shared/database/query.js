@@ -308,13 +308,29 @@ function createQuery(db, pool) {
 
   async function opportunities(itemId) {
     const result = await db.execute(sql`
-      SELECT price, remaining_volume AS "remainingVolume", fill_ratio AS "fillRatio",
-             higher_price_queue AS "higherPriceQueue",
-             fill_velocity_per_minute AS "fillVelocityPerMinute", observed_at AS "observedAt"
-      FROM order_price_opportunities
-      WHERE item_id = ${itemId} AND snapshot_id = (
-        SELECT id FROM order_snapshots WHERE item_id = ${itemId} ORDER BY observed_at DESC LIMIT 1
-      ) ORDER BY price DESC
+      WITH latest AS (
+        SELECT id, market_price_floor_ratio
+        FROM order_snapshots
+        WHERE item_id = ${itemId}
+        ORDER BY observed_at DESC LIMIT 1
+      ), market AS (
+        SELECT latest.id AS snapshot_id, latest.market_price_floor_ratio,
+               SUM(entry.price::double precision * entry.delivered) /
+                 NULLIF(SUM(entry.delivered), 0) AS preliminary_average_price
+        FROM latest JOIN order_entries entry ON entry.snapshot_id = latest.id
+        GROUP BY latest.id, latest.market_price_floor_ratio
+      )
+      SELECT opportunity.price, opportunity.remaining_volume AS "remainingVolume",
+             opportunity.delivered, opportunity.total,
+             opportunity.fill_ratio AS "fillRatio",
+             opportunity.higher_price_queue AS "higherPriceQueue",
+             opportunity.fill_velocity_per_minute AS "fillVelocityPerMinute",
+             opportunity.observed_at AS "observedAt",
+             opportunity.price >= market.preliminary_average_price * market.market_price_floor_ratio
+               AS "isMarketSample"
+      FROM order_price_opportunities opportunity
+      JOIN market ON market.snapshot_id = opportunity.snapshot_id
+      ORDER BY opportunity.price DESC
     `);
     return result.rows;
   }
