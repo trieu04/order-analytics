@@ -36,8 +36,8 @@ test("registers and removes windowOpen listener around the order command", async
     minecraft: { host: "localhost", port: 25565 },
     scanSettleMs: 0,
     observationClient: { submit: async () => ({}) },
-    logger: { info() {}, error() {} },
-    scanLogger: { info() {}, error() {} },
+    logger: { debug() {}, info() {}, error() {} },
+    scanLogger: { debug() {}, info() {}, error() {} },
     createBot: () => bot
   });
 
@@ -94,8 +94,8 @@ test("only stores order rows whose stack id matches the requested item", async (
     minecraft: { host: "localhost", port: 25565 },
     scanSettleMs: 0,
     observationClient: { submit: async snapshot => { stored = snapshot; return { bestPrice: 2000, totalVolume: 10 }; } },
-    logger: { info() {}, error() {} },
-    scanLogger: { info() {}, error() {} },
+    logger: { debug() {}, info() {}, error() {} },
+    scanLogger: { debug() {}, info() {}, error() {} },
     createBot: () => bot
   });
 

@@ -87,6 +87,7 @@ Các giá trị kết nối đọc từ environment và cần restart khi thay �
 | `MC_PORT` | `25565` | Minecraft server port |
 | `MC_VERSION` | `false` | Tự nhận protocol hoặc version như `1.21.4` |
 | `MC_PROFILES_FOLDER` | `./profiles` | Thư mục gốc authentication cache của collector |
+| `LOG_LEVEL` | `info` trong production, `debug` ở môi trường khác | Mức log: `debug`, `info` hoặc `error` |
 | `DATABASE_URL` | PostgreSQL local | Database connection string |
 | `API_PORT` | `6600` | HTTP/UI port |
 

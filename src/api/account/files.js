@@ -36,19 +36,4 @@ function writeCacheFile(filename, value) {
   fs.renameSync(temporary, filename);
 }
 
-function tailLog(filename, maximumBytes = 128 * 1024) {
-  try {
-    const stat = fs.statSync(filename);
-    const length = Math.min(stat.size, maximumBytes);
-    const buffer = Buffer.alloc(length);
-    const handle = fs.openSync(filename, "r");
-    try { fs.readSync(handle, buffer, 0, length, stat.size - length); }
-    finally { fs.closeSync(handle); }
-    return buffer.toString("utf8");
-  } catch (error) {
-    if (error.code === "ENOENT") return "";
-    throw error;
-  }
-}
-
-module.exports = { CACHE_FILES, LOG_FILE, cacheFilename, parseCacheFile, profileFile, tailLog, writeCacheFile };
+module.exports = { CACHE_FILES, LOG_FILE, cacheFilename, parseCacheFile, profileFile, writeCacheFile };

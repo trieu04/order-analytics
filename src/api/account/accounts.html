@@ -51,8 +51,8 @@
         <a role="button" class="secondary outline" :href="selected ? `/api/accounts/${selected.id}/files/${name}` : '#'">Export</a></span>
       </article></template></div>
       <br>
-      <header class="section-head"><h3>Live account log</h3><a role="button" class="outline" :href="selected ? `/api/accounts/${selected.id}/log/download` : '#'">Download log</a></header>
-      <pre class="log" x-text="logText || 'Chưa có log.'"></pre>
+      <header class="section-head"><h3>Live account log</h3><small>Hiển thị log của khoảng 24 giờ gần nhất. Log cũ nằm trong account.log trên server.</small></header>
+      <pre class="log" x-ref="accountLog" x-text="logText || 'Chưa có log.'"></pre>
     </section>
     <p x-show="accounts.length===0"><small>Thêm account, sau đó bấm Login để collector bắt đầu kết nối.</small></p>
   </article>
@@ -72,7 +72,7 @@ function accountsUi(){return{
   async accountAction(account,action){try{await this.request(`/api/accounts/${account.id}/${action}`,{method:'POST'});await new Promise(resolve=>setTimeout(resolve,1200));await this.refresh()}catch(error){this.notify(error.message,true)}},
   async openTools(account){this.selected=account;await this.refreshLog();clearInterval(this.logTimer);this.logTimer=setInterval(()=>this.refreshLog(),2000)},
   closeTools(){clearInterval(this.logTimer);this.logTimer=null;this.selected=null;this.logText=''},
-  async refreshLog(){if(!this.selected)return;try{const response=await fetch(`/api/accounts/${this.selected.id}/log`);if(!response.ok)throw new Error(`HTTP ${response.status}`);this.logText=await response.text()}catch(error){this.notify(error.message,true)}},
+  async refreshLog(){if(!this.selected)return;try{const response=await fetch(`/api/accounts/${this.selected.id}/log`);if(!response.ok)throw new Error(`HTTP ${response.status}`);this.logText=await response.text();this.$nextTick(()=>{const log=this.$refs.accountLog;if(log)log.scrollTop=log.scrollHeight})}catch(error){this.notify(error.message,true)}},
   async importCache(name,event){const file=event.target.files[0];if(!file||!this.selected)return;if(!confirm(`Import ${name} cho ${this.selected.label}?`)){event.target.value='';return}try{const response=await fetch(`/api/accounts/${this.selected.id}/files/${name}`,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:await file.arrayBuffer()});if(!response.ok){const data=await response.json();throw new Error(data.error||`HTTP ${response.status}`)}this.notify(`Đã import ${name}`)}catch(error){this.notify(error.message,true)}finally{event.target.value=''}},
   async removeAccount(account){if(!confirm(`Xóa ${account.label}? Auth cache được giữ lại.`))return;try{await this.request(`/api/accounts/${account.id}`,{method:'DELETE'});await this.refresh();this.notify('Đã xóa account')}catch(error){this.notify(error.message,true)}}
 }}

@@ -4,7 +4,8 @@ const crypto = require("node:crypto");
 const express = require("express");
 const fs = require("node:fs");
 const path = require("node:path");
-const { CACHE_FILES, LOG_FILE, cacheFilename, profileFile, tailLog, writeCacheFile } = require("./files");
+const { readLiveAccountLog } = require("../../shared/account-log");
+const { CACHE_FILES, cacheFilename, profileFile, writeCacheFile } = require("./files");
 
 function accountInput(body) {
   const label = String(body?.label || "").trim();
@@ -73,13 +74,7 @@ function createAccountRouter(database, options = {}) {
   });
   router.get("/:id/log", async (req, res) => {
     const account = await findAccount(req.params.id);
-    res.type("text/plain").send(tailLog(profileFile(profilesFolder, account.profileKey, LOG_FILE)));
-  });
-  router.get("/:id/log/download", async (req, res) => {
-    const account = await findAccount(req.params.id);
-    const filename = profileFile(profilesFolder, account.profileKey, LOG_FILE);
-    if (!fs.existsSync(filename)) return res.status(404).json({ error: "account log not found" });
-    res.download(filename, `${account.label.replace(/[^a-z0-9_-]+/gi, "-") || "account"}.log`);
+    res.type("text/plain").send(readLiveAccountLog(path.join(profilesFolder, String(account.profileKey))));
   });
   return router;
 }

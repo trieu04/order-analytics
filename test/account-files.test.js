@@ -5,7 +5,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { cacheFilename, parseCacheFile, profileFile, tailLog, writeCacheFile } = require("../src/api/account/files");
+const { createAccountLogWriter, readLiveAccountLog } = require("../src/shared/account-log");
+const { cacheFilename, parseCacheFile, profileFile, writeCacheFile } = require("../src/api/account/files");
 
 test("only resolves supported account files", () => {
   assert.equal(profileFile("/profiles", "key", "live-cache.json"), "/profiles/key/live-cache.json");
@@ -29,10 +30,15 @@ test("validates and atomically stores cache JSON", () => {
   assert.equal(fs.readFileSync(filename, "utf8"), '{"token":"test"}');
 });
 
-test("reads only the tail of an account log", () => {
+test("keeps recent hourly logs live and compacts older logs into the archive", () => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "account-log-"));
-  const filename = path.join(folder, "account.log");
-  fs.writeFileSync(filename, "1234567890");
-  assert.equal(tailLog(filename, 4), "7890");
-  assert.equal(tailLog(path.join(folder, "missing.log")), "");
+  let hour = 0;
+  const write = createAccountLogWriter(folder, {
+    now: () => new Date(Date.UTC(2026, 7, 30, hour++)), retainHours: 2
+  });
+  write("first\n");
+  write("second\n");
+  write("third\n");
+  assert.equal(readLiveAccountLog(folder), "second\nthird\n");
+  assert.equal(fs.readFileSync(path.join(folder, "account.log"), "utf8"), "first\n");
 });
