@@ -78,6 +78,14 @@ Mineflayer → /order → Orders (Page 1) → parser → PostgreSQL → Analytic
 - UI chỉ gọi REST, không chứa database logic.
 - Server-side validation là chuẩn; HTML validation chỉ hỗ trợ UX.
 - Giữ giao diện usable trên desktop và mobile.
+- Với form dạng grid, không dựa hoàn toàn vào `.grid` mặc định của Pico.css khi label
+  hoặc help text có độ dài khác nhau; định nghĩa grid, `align-items` và breakpoint rõ ràng.
+- Reset `margin-bottom` trực tiếp cho `input`, `select`, `button` trong form và giữ
+  chiều cao control thống nhất; reset trên `label` không thay thế được reset control.
+- Các field đặt cạnh nhau phải có cấu trúc đồng nhất (label, control, help text). Nếu
+  cần căn hàng, dành chiều cao hoặc grid row nhất quán cho từng phần.
+- Khi sửa layout, kiểm tra tối thiểu ở chiều rộng mobile 390px, tablet 768px và
+  desktop 1440px; unit test không phát hiện được lỗi căn chỉnh CSS trực quan.
 
 ## Kiểm thử bắt buộc
 
