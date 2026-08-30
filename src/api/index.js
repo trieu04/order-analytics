@@ -32,7 +32,7 @@ async function main() {
   app.get("/accounts", accountPage);
   app.get("/settings", settingPage);
   app.use("/api/settings", settingModule.router);
-  app.use("/api/accounts", createAccountRouter(database));
+  app.use("/api/accounts", createAccountRouter(database, { profilesFolder: config.minecraft.profilesFolder }));
   app.use("/api/analytics", createAnalyticRouter(database, settingModule.getSetting));
   app.use((error, _req, res, _next) => {
     logger.error(error.message);

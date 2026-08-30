@@ -6,10 +6,10 @@
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
     [x-cloak]{display:none!important}main{max-width:1100px}header{margin-block:2rem 1rem}header nav ul{align-items:center}
-    .section-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}.section-head h2,.section-head button{margin-bottom:0}
-    .account-form{display:grid;grid-template-columns:1fr 1.5fr auto auto;gap:.65rem;align-items:end;margin-bottom:1rem}.account-form label,.account-form select,.account-form button{margin-bottom:0}
-    .challenge{padding:1rem;border:1px solid var(--pico-primary);border-radius:var(--pico-border-radius)}.table-wrap{overflow-x:auto}table{white-space:nowrap}.message{min-height:1.6rem}
-    @media(max-width:700px){.account-form{grid-template-columns:1fr}.account-form button{width:100%}}
+    .section-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}.section-head h2,.section-head button{margin-bottom:0}
+    .account-form{display:grid;grid-template-columns:1fr 1.5fr minmax(10rem,auto) auto auto;gap:.65rem;align-items:end;margin-bottom:1rem}.account-form label{margin-bottom:0}.account-form input,.account-form select,.account-form button{height:3rem;margin-bottom:0}
+    .challenge,.account-tools{padding:1rem;border:1px solid var(--pico-primary);border-radius:var(--pico-border-radius)}.account-tools>header{margin:0 0 .75rem}.account-tools>p{margin-bottom:.75rem}.table-wrap{overflow-x:auto}table{white-space:nowrap}.account-meta{display:block;color:var(--pico-muted-color);font-size:.78rem}.error-text{color:var(--pico-del-color);max-width:18rem;overflow:hidden;text-overflow:ellipsis}.account-actions{display:grid;grid-template-columns:repeat(2,max-content);gap:.3rem}.account-actions button{min-width:2.4rem;margin:0;padding:.35rem .55rem;font-size:.8rem}.account-actions .icon-action{font-size:1rem}.message{min-height:1.6rem}.cache-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem}.cache-grid article{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:0;padding:.65rem .75rem}.cache-actions{display:flex;gap:.4rem}.cache-actions label,.cache-actions a{width:auto;margin:0;padding:.35rem .6rem;font-size:.8rem}.cache-actions input{display:none}.log{height:22rem;overflow:auto;white-space:pre-wrap;background:#111;color:#ddd;padding:1rem;border-radius:.3rem;font:12px/1.45 monospace}
+    @media(max-width:700px){.account-form{grid-template-columns:1fr}.account-form button{width:100%}.cache-grid{grid-template-columns:1fr}}
   </style>
 </head><body>
 <main class="container" x-data="accountsUi()" x-init="load()" x-cloak>
@@ -18,37 +18,62 @@
     <ul><li><a href="/">Thống kê</a></li><li><a href="/accounts" aria-current="page">Tài khoản</a></li><li><a href="/settings">Cấu hình</a></li></ul>
   </nav></header>
   <article>
-    <header class="section-head"><hgroup><h2>Minecraft accounts</h2><p>Token xác thực chỉ nằm trong collector.</p></hgroup><button class="outline" @click="showForm=!showForm">+ Thêm account</button></header>
+    <header class="section-head"><hgroup><h2>Minecraft accounts</h2><p>Token xác thực chỉ nằm trong collector.</p></hgroup><button class="outline" @click="openCreate()">+ Thêm account</button></header>
     <div x-show="showForm" class="account-form">
-      <label>Tên<input x-model.trim="newAccount.label" maxlength="60" placeholder="Collector 1"></label>
-      <label>Microsoft email / username<input x-model.trim="newAccount.username" maxlength="254"></label>
-      <label>Kiểu<select x-model="newAccount.authType"><option value="microsoft">Microsoft</option><option value="offline">Offline</option></select></label>
-      <button :aria-busy="busy" :disabled="busy" @click="addAccount()">Lưu</button>
+      <label>Tên<input x-model.trim="accountForm.label" maxlength="60" placeholder="Collector 1"></label>
+      <label>Microsoft email / username<input x-model.trim="accountForm.username" maxlength="254"></label>
+      <label>Kiểu<select x-model="accountForm.authType"><option value="microsoft">Microsoft</option><option value="offline">Offline</option></select></label>
+      <button :aria-busy="busy" :disabled="busy" @click="saveAccount()" x-text="editingId ? 'Cập nhật' : 'Lưu'"></button>
+      <button class="secondary outline" :disabled="busy" @click="closeForm()">Hủy</button>
     </div>
-    <div class="table-wrap"><table><thead><tr><th>Tên</th><th>Account</th><th>Trạng thái</th><th>Đang quét</th><th>Hành động</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Trạng thái</th><th>Hoạt động</th><th>Lỗi gần nhất</th><th>Hành động</th></tr></thead><tbody>
       <template x-for="account in accounts" :key="account.id"><tr>
-        <td x-text="account.label"></td><td x-text="account.username"></td><td x-text="account.state"></td><td x-text="account.currentItemId||'—'"></td>
-        <td><div role="group">
+        <td><strong x-text="account.label"></strong><small class="account-meta" x-text="account.username"></small><small class="account-meta" x-text="`Minecraft: ${account.minecraftUsername||'—'}`"></small><small class="account-meta" x-text="`Auth: ${account.authType}`"></small></td>
+        <td><span x-text="account.state"></span><small class="account-meta" x-text="account.enabled ? 'Enabled' : 'Disabled'"></small></td>
+        <td><span x-text="account.currentItemId ? `Đang quét: ${account.currentItemId}` : 'Không quét'"></span><small class="account-meta" x-text="`Kết nối: ${formatDate(account.connectedAt)}`"></small><small class="account-meta" x-text="`Scan: ${formatDate(account.lastScanAt)}`"></small><small class="account-meta" x-text="`Heartbeat: ${formatDate(account.heartbeatAt)}`"></small></td>
+        <td class="error-text" :title="account.lastError||''" x-text="account.lastError||'—'"></td>
+        <td><div class="account-actions">
           <button class="outline" x-show="!active(account)" @click="accountAction(account,'login')">Login</button>
           <button class="secondary outline" x-show="active(account)" @click="accountAction(account,'disconnect')">Ngắt</button>
-          <button class="contrast outline" x-show="deletable(account)" @click="removeAccount(account)">Xóa</button>
+          <button class="outline icon-action" x-show="deletable(account)" title="Chỉnh sửa" aria-label="Chỉnh sửa account" @click="startEdit(account)">✏️</button>
+          <button class="outline" title="Files và log" aria-label="Mở files và log" @click="openTools(account)">Info</button>
+          <button class="contrast outline icon-action" x-show="deletable(account)" title="Xóa" aria-label="Xóa account" @click="removeAccount(account)">🗑</button>
         </div></td>
       </tr></template>
     </tbody></table></div>
     <div class="challenge" x-show="challenge.userCode"><strong>Xác thực Microsoft</strong><p>Mở <a :href="challenge.verificationUri" target="_blank" rel="noopener" x-text="challenge.verificationUri"></a> và nhập mã <code x-text="challenge.userCode"></code>.</p></div>
+    <section class="account-tools" x-show="selected" x-transition>
+      <header class="section-head"><h3 x-text="selected ? `Files & log — ${selected.label}` : ''"></h3><button class="secondary outline" @click="closeTools()">Đóng</button></header>
+      <p><small>Chỉ import khi account đã ngắt kết nối. File cache được kiểm tra JSON trước khi thay thế.</small></p>
+      <div class="cache-grid"><template x-for="name in cacheFiles" :key="name"><article>
+        <strong x-text="name"></strong><span class="cache-actions">
+        <label role="button" class="outline">Import<input type="file" accept="application/json,.json" @change="importCache(name,$event)"></label>
+        <a role="button" class="secondary outline" :href="selected ? `/api/accounts/${selected.id}/files/${name}` : '#'">Export</a></span>
+      </article></template></div>
+      <br>
+      <header class="section-head"><h3>Live account log</h3><a role="button" class="outline" :href="selected ? `/api/accounts/${selected.id}/log/download` : '#'">Download log</a></header>
+      <pre class="log" x-text="logText || 'Chưa có log.'"></pre>
+    </section>
     <p x-show="accounts.length===0"><small>Thêm account, sau đó bấm Login để collector bắt đầu kết nối.</small></p>
   </article>
   <p class="message" x-text="message"></p>
 </main>
 <script>
 function accountsUi(){return{
-  accounts:[],newAccount:{label:'',username:'',authType:'microsoft'},showForm:false,busy:false,challenge:{},message:'',statusTimer:null,
+  accounts:[],accountForm:{label:'',username:'',authType:'microsoft',enabled:true},editingId:null,showForm:false,busy:false,challenge:{},message:'',statusTimer:null,logTimer:null,selected:null,logText:'',cacheFiles:['live-cache.json','mca-cache.json','xbl-cache.json'],
   async request(url,options){const response=await fetch(url,options);if(response.status===204)return null;const data=await response.json();if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data},
-  notify(text,error=false){this.message=(error?'Lỗi: ':'')+text},active(account){return ['connected','scanning','connecting','awaiting_auth','reconnecting'].includes(account.state)},deletable(account){return ['disconnected','collector_offline','error'].includes(account.state)},
+  notify(text,error=false){this.message=(error?'Lỗi: ':'')+text},active(account){return ['connected','scanning','connecting','awaiting_auth','reconnecting'].includes(account.state)},deletable(account){return ['disconnected','collector_offline','error'].includes(account.state)},formatDate(value){return value?new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'medium'}).format(new Date(value)):'—'},
   async load(){await this.refresh();clearInterval(this.statusTimer);this.statusTimer=setInterval(()=>this.refresh(),3000)},
   async refresh(){try{this.accounts=await this.request('/api/accounts');const waiting=this.accounts.find(account=>account.state==='awaiting_auth');this.challenge=waiting?await this.request(`/api/accounts/${waiting.id}/login-challenge`):{};this.notify('')}catch(error){this.notify(error.message,true)}},
-  async addAccount(){this.busy=true;try{await this.request('/api/accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.newAccount)});this.newAccount={label:'',username:'',authType:'microsoft'};this.showForm=false;await this.refresh();this.notify('Đã thêm account')}catch(error){this.notify(error.message,true)}finally{this.busy=false}},
+  openCreate(){this.editingId=null;this.accountForm={label:'',username:'',authType:'microsoft',enabled:true};this.showForm=true},
+  startEdit(account){this.editingId=account.id;this.accountForm={label:account.label,username:account.username,authType:account.authType,enabled:account.enabled};this.showForm=true;window.scrollTo({top:0,behavior:'smooth'})},
+  closeForm(){this.showForm=false;this.editingId=null},
+  async saveAccount(){this.busy=true;try{const editing=Boolean(this.editingId);await this.request(editing?`/api/accounts/${this.editingId}`:'/api/accounts',{method:editing?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.accountForm)});this.closeForm();await this.refresh();this.notify(editing?'Đã cập nhật account':'Đã thêm account')}catch(error){this.notify(error.message,true)}finally{this.busy=false}},
   async accountAction(account,action){try{await this.request(`/api/accounts/${account.id}/${action}`,{method:'POST'});await new Promise(resolve=>setTimeout(resolve,1200));await this.refresh()}catch(error){this.notify(error.message,true)}},
+  async openTools(account){this.selected=account;await this.refreshLog();clearInterval(this.logTimer);this.logTimer=setInterval(()=>this.refreshLog(),2000)},
+  closeTools(){clearInterval(this.logTimer);this.logTimer=null;this.selected=null;this.logText=''},
+  async refreshLog(){if(!this.selected)return;try{const response=await fetch(`/api/accounts/${this.selected.id}/log`);if(!response.ok)throw new Error(`HTTP ${response.status}`);this.logText=await response.text()}catch(error){this.notify(error.message,true)}},
+  async importCache(name,event){const file=event.target.files[0];if(!file||!this.selected)return;if(!confirm(`Import ${name} cho ${this.selected.label}?`)){event.target.value='';return}try{const response=await fetch(`/api/accounts/${this.selected.id}/files/${name}`,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:await file.arrayBuffer()});if(!response.ok){const data=await response.json();throw new Error(data.error||`HTTP ${response.status}`)}this.notify(`Đã import ${name}`)}catch(error){this.notify(error.message,true)}finally{event.target.value=''}},
   async removeAccount(account){if(!confirm(`Xóa ${account.label}? Auth cache được giữ lại.`))return;try{await this.request(`/api/accounts/${account.id}`,{method:'DELETE'});await this.refresh();this.notify('Đã xóa account')}catch(error){this.notify(error.message,true)}}
 }}
 </script></body></html>

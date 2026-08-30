@@ -28,8 +28,15 @@ async function main() {
   async function start(account) {
     if (workers.has(account.id) || !account.enabled) return;
     const profilesFolder = path.join(config.minecraft.profilesFolder, String(account.profileKey));
+    fs.mkdirSync(profilesFolder, { recursive: true, mode: 0o700 });
+    const accountLog = path.join(profilesFolder, "account.log");
+    const output = stream => ({ write(value) { stream.write(value); fs.appendFileSync(accountLog,
+      `${new Date().toISOString()} ${value}`, { mode: 0o600 }); } });
+    const accountLogger = createLogger("minecraft", { stdout: output(process.stdout), stderr: output(process.stderr) });
+    const accountScanLogger = createLogger("scan", { stdout: output(process.stdout), stderr: output(process.stderr) });
     const worker = createCollector({ accountId: account.id, observationClient, scanSettleMs: config.scanSettleMs,
       minecraft: { ...config.minecraft, username: account.username, auth: account.authType, profilesFolder },
+      logger: accountLogger, scanLogger: accountScanLogger,
       onState: (state, details) => database.putAccountStatus(account.id, state, details)
         .catch(error => minecraftLogger.error(error.message)),
       onAuthCode: data => database.putLoginChallenge(account.id, data)
