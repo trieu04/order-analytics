@@ -4,15 +4,17 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "node src/api.js",
-    "start:collector": "node src/collector-main.js",
-    "dev": "node --watch src/api.js",
+    "start": "node src/index.js",
+    "start:collector": "node src/collector/main.js",
+    "dev": "node --watch src/index.js",
     "test": "node --test test/*.test.js"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
     "express": "^5.1.0",
     "mineflayer": "^4.38.0",
     "pg": "^8.16.3"

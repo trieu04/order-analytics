@@ -1,6 +1,6 @@
 "use strict";
 
-function normalizeRuntimeConfig(input, fallback = {}) {
+function normalizeSetting(input, fallback = {}) {
   const raw = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const interval = Number(raw.scanIntervalSeconds ?? fallback.scanIntervalSeconds ?? 300);
   const settle = Number(raw.scanSettleMs ?? fallback.scanSettleMs ?? 1200);
@@ -40,4 +40,4 @@ function normalizeRuntimeConfig(input, fallback = {}) {
   };
 }
 
-module.exports = { normalizeRuntimeConfig };
+module.exports = { normalizeSetting };

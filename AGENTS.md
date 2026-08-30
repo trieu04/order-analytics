@@ -11,15 +11,15 @@ Mineflayer → /order → Orders (Page 1) → parser → PostgreSQL → API/Graf
 
 ## Stack và cấu trúc
 
-- Node.js 22+, CommonJS; Mineflayer; Express 5; `pg`; PostgreSQL 17.
+- Node.js 22+, CommonJS; Mineflayer; Express 5; Drizzle ORM; `pg`; PostgreSQL 17.
 - UI HTML + AlpineJS 3 + Pico.css 2, không có build step.
-- `src/index.js`: composition root, routes, scheduler, lifecycle.
-- `src/collector.js`: connection, scan queue, container reading.
-- `src/parser.js`: lore/component parsing và summary.
-- `src/database.js`: schema, transactions, analytics queries.
-- `src/config.js`: static environment config.
-- `src/runtime-config.js`: validation dynamic config.
-- `src/ui.html`: config UI.
+- `src/index.js`: API composition root và lifecycle.
+- `src/api/analytic/`: dashboard HTML và analytics/scan router.
+- `src/api/account/`: account HTML, validation và router.
+- `src/api/setting/`: setting HTML, validation và router.
+- `src/collector/`: collector, order parser và observation client.
+- `src/shared/database/`: Drizzle setup, schema, repository và raw query cô lập.
+- `src/shared/config.js`, `src/shared/logger.js`: config và logger dùng chung.
 - `test/`: unit tests không cần Minecraft server.
 
 ## Quy tắc nghiệp vụ
@@ -40,7 +40,7 @@ Mineflayer → /order → Orders (Page 1) → parser → PostgreSQL → API/Graf
 - Credentials, Minecraft host/port/version, database URL và API port là static env.
 - Item list, scheduler, interval và settle time là dynamic PostgreSQL config.
 - Environment dynamic values chỉ seed `app_config` lần đầu, không ghi đè config operator.
-- Mọi `PUT /config` phải qua `normalizeRuntimeConfig`.
+- Mọi `PUT /api/settings` phải qua `normalizeSetting`.
 - Server phải persist thành công trước khi áp dụng config mới trong memory.
 
 ## Mineflayer safety
@@ -70,7 +70,8 @@ Mineflayer → /order → Orders (Page 1) → parser → PostgreSQL → API/Graf
 ```bash
 npm test
 node --check src/index.js
-node --check src/collector.js
+node --check src/collector/index.js
+node --check src/collector/main.js
 docker compose config
 ```
 

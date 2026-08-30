@@ -1,10 +1,35 @@
 "use strict";
 
-const { Pool } = require("pg");
-const { summarize } = require("./parser");
+const { asc, eq, sql } = require("drizzle-orm");
+const { minecraftAccounts, minecraftAccountStatus } = require("./schema");
 
-function createDatabase(connectionString) {
-  const pool = new Pool({ connectionString, max: 10 });
+function createQuery(db, pool) {
+  async function accounts() {
+    return db.select({ id: minecraftAccounts.id, label: minecraftAccounts.label, username: minecraftAccounts.username,
+      authType: minecraftAccounts.authType, enabled: minecraftAccounts.enabled,
+      state: sql`COALESCE(CASE WHEN ${minecraftAccountStatus.heartbeatAt} < now() - interval '30 seconds'
+        THEN 'collector_offline' ELSE ${minecraftAccountStatus.state} END, 'disconnected')`,
+      minecraftUsername: minecraftAccountStatus.minecraftUsername, heartbeatAt: minecraftAccountStatus.heartbeatAt,
+      connectedAt: minecraftAccountStatus.connectedAt, lastScanAt: minecraftAccountStatus.lastScanAt,
+      currentItemId: minecraftAccountStatus.currentItemId, lastError: minecraftAccountStatus.lastError })
+      .from(minecraftAccounts).leftJoin(minecraftAccountStatus,
+        eq(minecraftAccountStatus.accountId, minecraftAccounts.id)).orderBy(asc(minecraftAccounts.createdAt));
+  }
+
+  async function putAccountStatus(accountId, state, details = {}) {
+    const now = new Date();
+    const minecraftUsername = details.minecraftUsername || null;
+    const lastScanAt = details.lastScanAt || null;
+    await db.insert(minecraftAccountStatus).values({ accountId, state, minecraftUsername, heartbeatAt: now,
+      connectedAt: state === "connected" ? now : null, lastScanAt, currentItemId: details.currentItemId || null,
+      lastError: details.lastError || null }).onConflictDoUpdate({ target: minecraftAccountStatus.accountId, set: {
+        state, minecraftUsername: sql`COALESCE(${minecraftUsername}, ${minecraftAccountStatus.minecraftUsername})`,
+        heartbeatAt: now,
+        connectedAt: state === "connected" ? sql`COALESCE(${minecraftAccountStatus.connectedAt}, ${now})` : sql`${minecraftAccountStatus.connectedAt}`,
+        lastScanAt: sql`COALESCE(${lastScanAt}, ${minecraftAccountStatus.lastScanAt})`,
+        currentItemId: details.currentItemId || null, lastError: details.lastError || null
+      } });
+  }
 
   async function initialize() {
     await pool.query(`
@@ -204,184 +229,37 @@ function createDatabase(connectionString) {
     `);
   }
 
-  async function getConfig() {
-    const result = await pool.query("SELECT value, updated_at FROM app_config WHERE id = 1");
-    return result.rows[0] ? { ...result.rows[0].value, updatedAt: result.rows[0].updated_at } : null;
-  }
-
-  async function putConfig(value) {
-    const result = await pool.query(`
-      INSERT INTO app_config (id, value, updated_at) VALUES (1, $1::jsonb, now())
-      ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-      RETURNING value, updated_at
-    `, [JSON.stringify(value)]);
-    return { ...result.rows[0].value, updatedAt: result.rows[0].updated_at };
-  }
-
-  async function seedLegacyAccount(account) {
-    if (!account) return;
-    await pool.query(`
-      INSERT INTO minecraft_accounts (id, label, username, auth_type, profile_key)
-      SELECT gen_random_uuid(), 'Collector 1', $1, $2, gen_random_uuid()
-      WHERE NOT EXISTS (SELECT 1 FROM minecraft_accounts)
-      ON CONFLICT DO NOTHING
-    `, [account.username, account.auth]);
-  }
-
-  async function accounts() {
-    const result = await pool.query(`
-      SELECT a.id, a.label, a.username, a.auth_type AS "authType", a.enabled,
-             COALESCE(CASE WHEN s.heartbeat_at < now() - interval '30 seconds' THEN 'collector_offline' ELSE s.state END,
-               'disconnected') AS state,
-             s.minecraft_username AS "minecraftUsername", s.heartbeat_at AS "heartbeatAt",
-             s.connected_at AS "connectedAt", s.last_scan_at AS "lastScanAt",
-             s.current_item_id AS "currentItemId", s.last_error AS "lastError"
-      FROM minecraft_accounts a LEFT JOIN minecraft_account_status s ON s.account_id = a.id
-      ORDER BY a.created_at
-    `);
-    return result.rows;
-  }
-
-  async function account(id) {
-    const result = await pool.query(`SELECT id, label, username, auth_type AS "authType", enabled,
-      profile_key AS "profileKey" FROM minecraft_accounts WHERE id = $1`, [id]);
-    return result.rows[0] || null;
-  }
-
-  async function createAccount({ id, label, username, authType, profileKey }) {
-    const result = await pool.query(`INSERT INTO minecraft_accounts
-      (id, label, username, auth_type, profile_key) VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, label, username, auth_type AS "authType", enabled`,
-    [id, label, username, authType, profileKey]);
-    return result.rows[0];
-  }
-
-  async function updateAccount(id, { label, username, authType, enabled }) {
-    const result = await pool.query(`UPDATE minecraft_accounts SET label=$2, username=$3, auth_type=$4,
-      enabled=$5, updated_at=now() WHERE id=$1 RETURNING id, label, username, auth_type AS "authType", enabled`,
-    [id, label, username, authType, enabled]);
-    return result.rows[0] || null;
-  }
-
-  async function deleteAccount(id) {
-    return (await pool.query("DELETE FROM minecraft_accounts WHERE id=$1 RETURNING id", [id])).rowCount > 0;
-  }
-
-  async function addAccountCommand(accountId, command) {
-    const result = await pool.query(`INSERT INTO minecraft_account_commands (account_id, command)
-      VALUES ($1,$2) RETURNING id, status`, [accountId, command]);
-    return result.rows[0];
-  }
-
   async function claimAccountCommands() {
-    const result = await pool.query(`UPDATE minecraft_account_commands SET status='running', claimed_at=now()
+    const result = await db.execute(sql`UPDATE minecraft_account_commands SET status='running', claimed_at=now()
       WHERE id IN (SELECT id FROM minecraft_account_commands WHERE status='pending' ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 10)
       RETURNING id, account_id AS "accountId", command`);
     return result.rows;
   }
 
-  async function finishAccountCommand(id, error = null) {
-    await pool.query(`UPDATE minecraft_account_commands SET status=$2, error=$3, finished_at=now() WHERE id=$1`,
-      [id, error ? "failed" : "succeeded", error]);
-  }
-
-  async function putAccountStatus(accountId, state, details = {}) {
-    await pool.query(`INSERT INTO minecraft_account_status
-      (account_id,state,minecraft_username,heartbeat_at,connected_at,last_scan_at,current_item_id,last_error)
-      VALUES ($1,$2,$3,now(),CASE WHEN $2='connected' THEN now() END,$4,$5,$6)
-      ON CONFLICT (account_id) DO UPDATE SET state=$2, minecraft_username=COALESCE($3,minecraft_account_status.minecraft_username),
-      heartbeat_at=now(), connected_at=CASE WHEN $2='connected' THEN COALESCE(minecraft_account_status.connected_at,now()) ELSE minecraft_account_status.connected_at END,
-      last_scan_at=COALESCE($4,minecraft_account_status.last_scan_at), current_item_id=$5, last_error=$6`,
-    [accountId, state, details.minecraftUsername || null, details.lastScanAt || null,
-      details.currentItemId || null, details.lastError || null]);
-  }
-
-  async function putLoginChallenge(accountId, data) {
-    const expires = new Date(Date.now() + Number(data.expires_in || 900) * 1000);
-    await pool.query(`INSERT INTO minecraft_login_challenges (account_id,verification_uri,user_code,expires_at)
-      VALUES ($1,$2,$3,$4) ON CONFLICT (account_id) DO UPDATE SET verification_uri=$2,user_code=$3,expires_at=$4,updated_at=now()`,
-    [accountId, data.verification_uri, data.user_code, expires]);
-  }
-
-  async function loginChallenge(accountId) {
-    const result = await pool.query(`SELECT verification_uri AS "verificationUri", user_code AS "userCode",
-      expires_at AS "expiresAt" FROM minecraft_login_challenges WHERE account_id=$1 AND expires_at>now()`, [accountId]);
-    return result.rows[0] || null;
-  }
-
-  async function clearLoginChallenge(accountId) { await pool.query("DELETE FROM minecraft_login_challenges WHERE account_id=$1", [accountId]); }
-
-  async function enqueueScan({ itemId, query, source }) {
-    const result = await pool.query(`INSERT INTO scan_jobs (item_id,search_query,source) VALUES ($1,$2,$3)
+  async function enqueueScan({ itemId, query: searchQuery, source }) {
+    const result = await db.execute(sql`INSERT INTO scan_jobs (item_id,search_query,source)
+      VALUES (${itemId},${searchQuery},${source})
       ON CONFLICT (item_id) WHERE status IN ('pending','running') DO UPDATE SET item_id=EXCLUDED.item_id
-      RETURNING id, item_id AS "itemId", source, status`, [itemId, query, source]);
+      RETURNING id, item_id AS "itemId", source, status`);
     return result.rows[0];
   }
 
   async function claimScan(accountId) {
-    const result = await pool.query(`UPDATE scan_jobs SET status='running',claimed_by=$1,claimed_at=now(),attempts=attempts+1
+    const result = await db.execute(sql`UPDATE scan_jobs SET status='running',claimed_by=${accountId},claimed_at=now(),attempts=attempts+1
       WHERE id=(SELECT id FROM scan_jobs WHERE status='pending' AND available_at<=now() ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
-      RETURNING id,item_id AS "itemId",search_query AS query`, [accountId]);
-    return result.rows[0] || null;
-  }
-
-  async function finishScan(id, snapshotId, error = null) {
-    await pool.query(`UPDATE scan_jobs SET status=$2,snapshot_id=$3,error=$4,finished_at=now() WHERE id=$1`,
-      [id, error ? "failed" : "succeeded", snapshotId, error]);
-  }
-
-  async function scanJob(id) {
-    const result = await pool.query(`SELECT id,item_id AS "itemId",source,status,claimed_by AS "claimedBy",
-      snapshot_id AS "snapshotId",error,created_at AS "createdAt",finished_at AS "finishedAt" FROM scan_jobs WHERE id=$1`, [id]);
+      RETURNING id,item_id AS "itemId",search_query AS query`);
     return result.rows[0] || null;
   }
 
   async function recoverCollectorWork() {
-    await pool.query(`UPDATE scan_jobs SET status='pending',claimed_by=NULL,claimed_at=NULL,error=NULL
+    await db.execute(sql`UPDATE scan_jobs SET status='pending',claimed_by=NULL,claimed_at=NULL,error=NULL
       WHERE status='running';
       UPDATE minecraft_account_commands SET status='pending',claimed_at=NULL,error=NULL
       WHERE status='running';`);
   }
 
-  async function addSnapshot({ botId, itemId, query, observedAt, orders }) {
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const configured = await client.query("SELECT value FROM app_config WHERE id = 1");
-      const marketPriceFloorRatio = Number(configured.rows[0]?.value?.marketPriceFloorRatio ?? 0.8);
-      const summary = summarize(orders, marketPriceFloorRatio);
-      const snapshot = await client.query(`
-        INSERT INTO order_snapshots
-          (bot_id, item_id, search_query, observed_at, best_price, best_price_volume,
-           total_volume, weighted_price, fill_ratio, order_count, market_max_price,
-           market_max_price_queue, market_average_price, higher_than_average_queue,
-           market_sample_order_count, market_sample_delivered, market_price_floor_ratio, calculation_version,
-           market_sample_volume, higher_than_average_delivered, higher_than_average_volume,
-           market_max_price_delivered, market_max_price_volume)
-        VALUES ($1, $2, $3, to_timestamp($4 / 1000.0), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 4, $18, $19, $20, $21, $22)
-        RETURNING id, observed_at
-      `, [botId, itemId, query, observedAt, summary.bestPrice, summary.bestPriceVolume,
-        summary.totalVolume, summary.weightedPrice, summary.fillRatio, summary.orderCount,
-        summary.marketMaxPrice, summary.marketMaxPriceQueue, summary.marketAveragePrice,
-        summary.higherThanAverageQueue, summary.marketSampleOrderCount, summary.marketSampleDelivered,
-        marketPriceFloorRatio, summary.marketSampleVolume, summary.higherThanAverageDelivered,
-        summary.higherThanAverageVolume, summary.marketMaxPriceDelivered, summary.marketMaxPriceVolume]);
-      for (const order of orders) {
-        await client.query(`
-          INSERT INTO order_entries (snapshot_id, slot, price, delivered, total, remaining)
-          VALUES ($1, $2, $3, $4, $5, $6)
-        `, [snapshot.rows[0].id, order.slot, order.price, order.delivered, order.total, order.remaining]);
-      }
-      await client.query("COMMIT");
-      return { snapshotId: snapshot.rows[0].id, observedAt: snapshot.rows[0].observed_at, ...summary };
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally { client.release(); }
-  }
-
   async function snapshots(itemId, limit) {
-    const result = await pool.query(`
+    const result = await db.execute(sql`
       SELECT snapshot.id, snapshot.bot_id AS "botId", snapshot.item_id AS "itemId",
              snapshot.search_query AS query, snapshot.observed_at AS "observedAt",
              snapshot.best_price AS "bestPrice",
@@ -420,29 +298,27 @@ function createDatabase(connectionString) {
         FROM order_entries entry
         WHERE entry.snapshot_id = snapshot.id AND entry.delivered > 0
       ) active ON true
-      WHERE ($1::text IS NULL OR snapshot.item_id = $1)
-      ORDER BY snapshot.observed_at DESC LIMIT $2
-    `, [itemId || null, limit]);
+      WHERE (${itemId || null}::text IS NULL OR snapshot.item_id = ${itemId || null})
+      ORDER BY snapshot.observed_at DESC LIMIT ${limit}
+    `);
     return result.rows;
   }
 
   async function opportunities(itemId) {
-    const result = await pool.query(`
+    const result = await db.execute(sql`
       SELECT price, remaining_volume AS "remainingVolume", fill_ratio AS "fillRatio",
              higher_price_queue AS "higherPriceQueue",
              fill_velocity_per_minute AS "fillVelocityPerMinute", observed_at AS "observedAt"
       FROM order_price_opportunities
-      WHERE item_id = $1 AND snapshot_id = (
-        SELECT id FROM order_snapshots WHERE item_id = $1 ORDER BY observed_at DESC LIMIT 1
+      WHERE item_id = ${itemId} AND snapshot_id = (
+        SELECT id FROM order_snapshots WHERE item_id = ${itemId} ORDER BY observed_at DESC LIMIT 1
       ) ORDER BY price DESC
-    `, [itemId]);
+    `);
     return result.rows;
   }
 
-  return { initialize, getConfig, putConfig, seedLegacyAccount, accounts, account, createAccount, updateAccount,
-    deleteAccount, addAccountCommand, claimAccountCommands, finishAccountCommand, putAccountStatus,
-    putLoginChallenge, loginChallenge, clearLoginChallenge, enqueueScan, claimScan, finishScan, scanJob, recoverCollectorWork,
-    addSnapshot, snapshots, opportunities, close: () => pool.end() };
+  return { accounts, initialize, claimAccountCommands, enqueueScan, claimScan, putAccountStatus,
+    recoverCollectorWork, snapshots, opportunities };
 }
 
-module.exports = { createDatabase };
+module.exports = { createQuery };

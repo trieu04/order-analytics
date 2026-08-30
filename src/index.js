@@ -1,6 +1,10 @@
 "use strict";
 
+const { createLogger } = require("./shared/logger");
+
+const logger = createLogger("api");
+
 require("./api").main().catch(error => {
-  console.error(`[api] ${error.stack || error}`);
+  logger.error(error);
   process.exit(1);
 });

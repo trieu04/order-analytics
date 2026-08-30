@@ -1,7 +1,7 @@
 "use strict";
 
 function createObservationClient(baseUrl) {
-  const endpoint = new URL("/internal/observations", baseUrl).toString();
+  const endpoint = new URL("/api/analytics/observations", baseUrl).toString();
 
   async function submit(observation) {
     const response = await fetch(endpoint, {

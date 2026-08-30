@@ -33,7 +33,7 @@ services:
 
   collector:
     build: .
-    command: ["node", "src/collector-main.js"]
+    command: ["node", "src/collector/main.js"]
     restart: unless-stopped
     depends_on:
       api:

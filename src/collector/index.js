@@ -2,6 +2,7 @@
 
 const mineflayer = require("mineflayer");
 const { componentText, itemLore, parseOrderLore } = require("./parser");
+const { createLogger } = require("../shared/logger");
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const PRE_SCAN_BASE_DELAY_MS = 100;
@@ -36,7 +37,8 @@ function stackMatchesItemId(stack, expectedId) {
   return candidates.includes(expectedId);
 }
 
-function createCollector({ minecraft, accountId, scanSettleMs, observationClient, logger = console,
+function createCollector({ minecraft, accountId, scanSettleMs, observationClient,
+  logger = createLogger("minecraft"), scanLogger = createLogger("scan"),
   createBot = mineflayer.createBot, onState = () => {}, onAuthCode = () => {} }) {
   let bot = null;
   let ready = false;
@@ -56,7 +58,7 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
       onMsaCode(data) {
         onState("awaiting_auth");
         onAuthCode(data);
-        logger.log(`[minecraft] account=${accountId || "default"} authentication required`);
+        logger.info(`account=${accountId || "default"} authentication required`);
       }
     });
     onState("connecting");
@@ -64,13 +66,13 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
       ready = true;
       reconnectAttempt = 0;
       onState("connected", { minecraftUsername: bot.username });
-      logger.log(`[minecraft] Connected as ${bot.username} to ${minecraft.host}:${minecraft.port}`);
+      logger.info(`Connected as ${bot.username} to ${minecraft.host}:${minecraft.port}`);
     });
-    bot.on("kicked", reason => logger.error(`[minecraft] Kicked: ${componentText(reason)}`));
-    bot.on("error", error => logger.error(`[minecraft] ${error.message}`));
+    bot.on("kicked", reason => logger.error(`Kicked: ${componentText(reason)}`));
+    bot.on("error", error => logger.error(error.message));
     bot.on("message", message => {
       const text = logText(message);
-      if (text) logger.log(`[minecraft] Server: ${text}`);
+      if (text) logger.info(`Server: ${text}`);
     });
     bot.once("end", reason => {
       ready = false;
@@ -78,7 +80,7 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
       reconnectAttempt++;
       const delayMs = reconnectDelayMs(reconnectAttempt);
       onState("reconnecting", { lastError: String(reason) });
-      logger.error(`[minecraft] Disconnected: ${reason}; reconnecting in ${delayMs / 1000}s`);
+      logger.error(`Disconnected: ${reason}; reconnecting in ${delayMs / 1000}s`);
       reconnectTimer = setTimeout(connect, delayMs);
     });
   }
@@ -107,16 +109,16 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
     if (!ready || !bot) throw Object.assign(new Error("Minecraft bot is not connected"), { statusCode: 503 });
     if (!item?.id || !item?.query) throw Object.assign(new Error("item id and query are required"), { statusCode: 400 });
     if (bot.currentWindow) {
-      logger.log(`[minecraft] Action: close window ${logText(bot.currentWindow.title) || bot.currentWindow.id}`);
+      logger.info(`Action: close window ${logText(bot.currentWindow.title) || bot.currentWindow.id}`);
       bot.closeWindow(bot.currentWindow);
     }
 
     await wait(randomizedPreScanDelayMs());
-    logger.log(`[minecraft] Action: send /order ${item.query}`);
+    logger.info(`Action: send /order ${item.query}`);
     const windowPromise = waitForOrdersWindow();
     bot.chat(`/order ${item.query}`);
     const window = await windowPromise;
-    logger.log(`[minecraft] Action: opened ${logText(window.title)}`);
+    logger.info(`Action: opened ${logText(window.title)}`);
     try {
       await wait(randomizedConfiguredDelayMs(settleMs));
       const orders = [];
@@ -133,11 +135,11 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
         windowTitle: logText(window.title), orders
       });
       lastScan = { itemId: item.id, query: item.query, ...result };
-      logger.log(`[scan] ${item.id}: best=${result.bestPrice}, volume=${result.totalVolume}, orders=${orders.length}`);
+      scanLogger.info(`${item.id}: best=${result.bestPrice}, volume=${result.totalVolume}, orders=${orders.length}`);
       return result;
     } finally {
       if (bot.currentWindow?.id === window.id) {
-        logger.log(`[minecraft] Action: close window ${logText(window.title) || window.id}`);
+        logger.info(`Action: close window ${logText(window.title) || window.id}`);
         bot.closeWindow(window);
       }
     }
@@ -154,7 +156,7 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
     clearTimeout(reconnectTimer);
     ready = false;
     onState("disconnected");
-    if (bot) logger.log("[minecraft] Action: disconnect collector shutdown");
+    if (bot) logger.info("Action: disconnect collector shutdown");
     if (typeof bot?.quit === "function") bot.quit("collector shutdown");
     else if (typeof bot?.end === "function") bot.end("collector shutdown");
     else if (typeof bot?._client?.end === "function") bot._client.end("collector shutdown");

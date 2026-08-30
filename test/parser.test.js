@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { componentText, itemLore, parseOrderLore, summarize } = require("../src/parser");
+const { componentText, itemLore, parseOrderLore, summarize } = require("../src/collector/parser");
 
 test("renders modern JSON chat components", () => {
   assert.equal(componentText('{"text":"$ ","extra":[{"text":"1.8K "},{"text":"each"}]}'), "$ 1.8K each");

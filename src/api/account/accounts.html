@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="vi"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tài khoản | Minecraft Order Analytics</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak]{display:none!important}main{max-width:1100px}header{margin-block:2rem 1rem}header nav ul{align-items:center}
+    .section-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}.section-head h2,.section-head button{margin-bottom:0}
+    .account-form{display:grid;grid-template-columns:1fr 1.5fr auto auto;gap:.65rem;align-items:end;margin-bottom:1rem}.account-form label,.account-form select,.account-form button{margin-bottom:0}
+    .challenge{padding:1rem;border:1px solid var(--pico-primary);border-radius:var(--pico-border-radius)}.table-wrap{overflow-x:auto}table{white-space:nowrap}.message{min-height:1.6rem}
+    @media(max-width:700px){.account-form{grid-template-columns:1fr}.account-form button{width:100%}}
+  </style>
+</head><body>
+<main class="container" x-data="accountsUi()" x-init="load()" x-cloak>
+  <header><nav>
+    <ul><li><hgroup><h1>Quản lý tài khoản</h1><p>Mineflayer collectors</p></hgroup></li></ul>
+    <ul><li><a href="/">Thống kê</a></li><li><a href="/accounts" aria-current="page">Tài khoản</a></li><li><a href="/settings">Cấu hình</a></li></ul>
+  </nav></header>
+  <article>
+    <header class="section-head"><hgroup><h2>Minecraft accounts</h2><p>Token xác thực chỉ nằm trong collector.</p></hgroup><button class="outline" @click="showForm=!showForm">+ Thêm account</button></header>
+    <div x-show="showForm" class="account-form">
+      <label>Tên<input x-model.trim="newAccount.label" maxlength="60" placeholder="Collector 1"></label>
+      <label>Microsoft email / username<input x-model.trim="newAccount.username" maxlength="254"></label>
+      <label>Kiểu<select x-model="newAccount.authType"><option value="microsoft">Microsoft</option><option value="offline">Offline</option></select></label>
+      <button :aria-busy="busy" :disabled="busy" @click="addAccount()">Lưu</button>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Tên</th><th>Account</th><th>Trạng thái</th><th>Đang quét</th><th>Hành động</th></tr></thead><tbody>
+      <template x-for="account in accounts" :key="account.id"><tr>
+        <td x-text="account.label"></td><td x-text="account.username"></td><td x-text="account.state"></td><td x-text="account.currentItemId||'—'"></td>
+        <td><div role="group">
+          <button class="outline" x-show="!active(account)" @click="accountAction(account,'login')">Login</button>
+          <button class="secondary outline" x-show="active(account)" @click="accountAction(account,'disconnect')">Ngắt</button>
+          <button class="contrast outline" x-show="deletable(account)" @click="removeAccount(account)">Xóa</button>
+        </div></td>
+      </tr></template>
+    </tbody></table></div>
+    <div class="challenge" x-show="challenge.userCode"><strong>Xác thực Microsoft</strong><p>Mở <a :href="challenge.verificationUri" target="_blank" rel="noopener" x-text="challenge.verificationUri"></a> và nhập mã <code x-text="challenge.userCode"></code>.</p></div>
+    <p x-show="accounts.length===0"><small>Thêm account, sau đó bấm Login để collector bắt đầu kết nối.</small></p>
+  </article>
+  <p class="message" x-text="message"></p>
+</main>
+<script>
+function accountsUi(){return{
+  accounts:[],newAccount:{label:'',username:'',authType:'microsoft'},showForm:false,busy:false,challenge:{},message:'',statusTimer:null,
+  async request(url,options){const response=await fetch(url,options);if(response.status===204)return null;const data=await response.json();if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data},
+  notify(text,error=false){this.message=(error?'Lỗi: ':'')+text},active(account){return ['connected','scanning','connecting','awaiting_auth','reconnecting'].includes(account.state)},deletable(account){return ['disconnected','collector_offline','error'].includes(account.state)},
+  async load(){await this.refresh();clearInterval(this.statusTimer);this.statusTimer=setInterval(()=>this.refresh(),3000)},
+  async refresh(){try{this.accounts=await this.request('/api/accounts');const waiting=this.accounts.find(account=>account.state==='awaiting_auth');this.challenge=waiting?await this.request(`/api/accounts/${waiting.id}/login-challenge`):{};this.notify('')}catch(error){this.notify(error.message,true)}},
+  async addAccount(){this.busy=true;try{await this.request('/api/accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.newAccount)});this.newAccount={label:'',username:'',authType:'microsoft'};this.showForm=false;await this.refresh();this.notify('Đã thêm account')}catch(error){this.notify(error.message,true)}finally{this.busy=false}},
+  async accountAction(account,action){try{await this.request(`/api/accounts/${account.id}/${action}`,{method:'POST'});await new Promise(resolve=>setTimeout(resolve,1200));await this.refresh()}catch(error){this.notify(error.message,true)}},
+  async removeAccount(account){if(!confirm(`Xóa ${account.label}? Auth cache được giữ lại.`))return;try{await this.request(`/api/accounts/${account.id}`,{method:'DELETE'});await this.refresh();this.notify('Đã xóa account')}catch(error){this.notify(error.message,true)}}
+}}
+</script></body></html>

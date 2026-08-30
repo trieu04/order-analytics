@@ -107,6 +107,11 @@ dành cho container collector. Khi đổi user, password hoặc database, cần 
 nhật `SERVICE_DATABASE_URL` tương ứng. Các giá trị khởi tạo PostgreSQL chỉ có
 hiệu lực khi volume database được tạo lần đầu.
 
+Database access dùng Drizzle ORM trên `node-postgres` và được chia tại
+`src/shared/database/`: `index.js` khởi tạo connection, `schema.js` khai báo
+bảng, `repository.js` chứa persistence API và `query.js` cô lập bootstrap/raw
+analytics query có tham số.
+
 Compose nạp `.env` trực tiếp vào collector. PostgreSQL chỉ nhận riêng
 `POSTGRES_DB`, `POSTGRES_USER` và `POSTGRES_PASSWORD`, tránh đưa thông tin đăng
 nhập Minecraft vào container database.
@@ -114,7 +119,7 @@ nhập Minecraft vào container database.
 ### Cấu hình động
 
 Các giá trị sau được seed từ `.env` khi database chưa có config, sau đó quản
-lý tại UI hoặc `PUT /config`:
+lý tại UI hoặc `PUT /api/settings`:
 
 - Bật/tắt scheduler.
 - Danh sách Minecraft account và thao tác login/disconnect.
@@ -131,27 +136,30 @@ API không có authentication. Compose mặc định chỉ bind vào loopback.
 
 | Method | Endpoint | Công dụng |
 |---|---|---|
-| GET | `/` | Config UI |
-| GET | `/health` | Trạng thái API/database |
-| GET/POST | `/minecraft/accounts` | Danh sách/thêm account |
-| POST | `/minecraft/accounts/:id/login` | Yêu cầu collector login |
-| POST | `/minecraft/accounts/:id/disconnect` | Ngắt một account |
-| GET/PUT | `/config` | Đọc/lưu cấu hình động |
-| POST | `/scan` | Xếp job quét item tùy ý |
-| POST | `/scan/:itemId` | Xếp job quét item đã cấu hình |
-| GET | `/scan-jobs/:id` | Xem trạng thái job |
-| GET | `/snapshots` | Danh sách snapshot |
-| GET | `/opportunities/:itemId` | Price ladder và cơ hội đặt giá |
+| GET | `/` | Analytics dashboard |
+| GET | `/accounts` | Account management UI |
+| GET | `/settings` | Dynamic setting UI |
+| GET | `/api/health` | Trạng thái API/database |
+| GET/POST | `/api/accounts` | Danh sách/thêm account |
+| POST | `/api/accounts/:id/login` | Yêu cầu collector login |
+| POST | `/api/accounts/:id/disconnect` | Ngắt một account |
+| GET/PUT | `/api/settings` | Đọc/lưu cấu hình động |
+| POST | `/api/analytics/observations` | Collector gửi snapshot đã parse |
+| POST | `/api/analytics/scans` | Xếp job quét item tùy ý |
+| POST | `/api/analytics/scans/:itemId` | Xếp job quét item đã cấu hình |
+| GET | `/api/analytics/scan-jobs/:id` | Xem trạng thái job |
+| GET | `/api/analytics/snapshots` | Danh sách snapshot |
+| GET | `/api/analytics/opportunities/:itemId` | Price ladder và cơ hội đặt giá |
 
 Ví dụ:
 
 ```bash
-curl -X POST http://localhost:3010/scan \
+curl -X POST http://localhost:3010/api/analytics/scans \
   -H 'Content-Type: application/json' \
   -d '{"id":"minecraft:redstone_block","query":"redstone block"}'
 
-curl 'http://localhost:3010/snapshots?itemId=minecraft:redstone_block&limit=20'
-curl 'http://localhost:3010/opportunities/minecraft:redstone_block'
+curl 'http://localhost:3010/api/analytics/snapshots?itemId=minecraft:redstone_block&limit=20'
+curl 'http://localhost:3010/api/analytics/opportunities/minecraft:redstone_block'
 ```
 
 ## Dữ liệu và Grafana
@@ -214,7 +222,8 @@ ORDER BY observed_at;
 ```bash
 npm test
 node --check src/index.js
-node --check src/collector.js
+node --check src/collector/index.js
+node --check src/collector/main.js
 docker compose config
 docker compose build api collector
 ```
@@ -229,7 +238,7 @@ docker compose build api collector
 ## Khắc phục sự cố
 
 - `Timed out waiting for Orders (Page 1)`: kiểm tra command, title, account và protocol.
-- `No order rows parsed`: lấy lore thực tế rồi cập nhật `src/parser.js` và test fixture.
+- `No order rows parsed`: lấy lore thực tế rồi cập nhật `src/collector/parser.js` và test fixture.
 - Microsoft login lặp lại: kiểm tra quyền ghi `profiles/` hoặc volume `auth-profiles`.
 - Không kết nối qua ViaVersion: đặt `MC_VERSION` rõ ràng thay vì `false`.
 - UI mất style/script: Pico.css và AlpineJS được tải qua CDN từ trình duyệt.

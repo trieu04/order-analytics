@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="vi"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cấu hình | Minecraft Order Analytics</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak]{display:none!important}main{max-width:1100px}header{margin-block:2rem 1rem}header nav ul{align-items:center}.message{min-height:1.6rem;margin:0}
+    .items{display:grid;grid-template-columns:auto minmax(220px,1fr) minmax(180px,1fr) auto;gap:.65rem;align-items:center}.items input,.items button{margin-bottom:0}.head{font-weight:600;color:var(--pico-muted-color)}
+    @media(max-width:700px){.head{display:none}.items{grid-template-columns:auto 1fr auto}.items .query{grid-column:2/-1}}
+  </style>
+</head><body>
+<main class="container" x-data="settingsUi()" x-init="load()" x-cloak>
+  <header><nav>
+    <ul><li><hgroup><h1>Quản lý cấu hình</h1><p>Scheduler và danh sách item</p></hgroup></li></ul>
+    <ul><li><a href="/">Thống kê</a></li><li><a href="/accounts">Tài khoản</a></li><li><a href="/settings" aria-current="page">Cấu hình</a></li></ul>
+  </nav></header>
+  <article><h2>Lịch quét</h2><fieldset class="grid">
+    <label><input type="checkbox" role="switch" x-model="config.scanEnabled"> Bật quét tự động</label>
+    <label>Chu kỳ (giây)<input type="number" min="10" max="86400" x-model.number="config.scanIntervalSeconds"></label>
+    <label>Chờ GUI ổn định (ms)<input type="number" min="0" max="10000" x-model.number="config.scanSettleMs"><small>Random 75%–125%</small></label>
+    <label>Nghỉ giữa hai lần quét (ms)<input type="number" min="0" max="60000" x-model.number="config.scanDelayMs"><small>Random 75%–125%; bắt đầu sau khi đóng GUI</small></label>
+    <label>Ngưỡng lọc giá thị trường (tỷ lệ)<input type="number" min="0.01" max="1" step="0.01" x-model.number="config.marketPriceFloorRatio"><small>0.8 = giữ giá từ 80% giá trung bình tạm</small></label>
+  </fieldset></article>
+  <article>
+    <header class="grid"><h2>Items</h2><button class="outline" @click="addItem()">+ Thêm item</button></header>
+    <div class="items head" aria-hidden="true"><span>Bật</span><span>Item ID</span><span>Query `/order`</span><span>Xóa</span></div>
+    <template x-for="(item,index) in config.items" :key="index"><div class="items">
+      <input type="checkbox" role="switch" x-model="item.enabled" :aria-label="`Bật ${item.id}`">
+      <input type="text" x-model.trim="item.id" placeholder="minecraft:redstone_block" aria-label="Item ID">
+      <input class="query" type="text" x-model.trim="item.query" placeholder="redstone block" aria-label="Order query">
+      <button class="secondary outline" @click="config.items.splice(index,1)" :aria-label="`Xóa ${item.id}`">×</button>
+    </div></template>
+    <p x-show="config.items.length===0"><small>Chưa có item. Thêm item để scheduler bắt đầu thu thập.</small></p>
+  </article>
+  <nav><ul><li><button :aria-busy="saving" :disabled="saving" @click="save()">Lưu cấu hình</button></li><li><button class="secondary outline" :disabled="saving" @click="load()">Tải lại</button></li></ul><ul><li><p class="message" x-text="message"></p></li></ul></nav>
+</main>
+<script>
+function settingsUi(){return{
+  config:{scanEnabled:true,scanIntervalSeconds:300,scanSettleMs:1200,scanDelayMs:2000,marketPriceFloorRatio:0.8,items:[]},saving:false,message:'',
+  async request(url,options){const response=await fetch(url,options),data=await response.json();if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data},notify(text,error=false){this.message=(error?'Lỗi: ':'')+text},addItem(){this.config.items.push({id:'minecraft:',query:'',enabled:true})},
+  async load(){try{this.config=await this.request('/api/settings');delete this.config.updatedAt;this.notify('')}catch(error){this.notify(error.message,true)}},
+  async save(){this.saving=true;try{this.config=await this.request('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.config)});delete this.config.updatedAt;this.notify('Đã lưu và áp dụng ngay')}catch(error){this.notify(error.message,true)}finally{this.saving=false}}
+}}
+</script></body></html>

@@ -2,13 +2,16 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { loadConfig } = require("./config");
-const { createDatabase } = require("./database");
-const { createCollector, randomizedConfiguredDelayMs } = require("./collector");
+const { normalizeSetting } = require("../api/setting/setting");
+const { loadConfig } = require("../shared/config");
+const { createDatabase } = require("../shared/database");
+const { createLogger } = require("../shared/logger");
+const { createCollector, randomizedConfiguredDelayMs } = require(".");
 const { createObservationClient } = require("./observation-client");
-const { normalizeRuntimeConfig } = require("./runtime-config");
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const minecraftLogger = createLogger("minecraft");
+const schedulerLogger = createLogger("scheduler");
 
 async function main() {
   const config = loadConfig();
@@ -28,9 +31,9 @@ async function main() {
     const worker = createCollector({ accountId: account.id, observationClient, scanSettleMs: config.scanSettleMs,
       minecraft: { ...config.minecraft, username: account.username, auth: account.authType, profilesFolder },
       onState: (state, details) => database.putAccountStatus(account.id, state, details)
-        .catch(error => console.error(`[minecraft] ${error.message}`)),
+        .catch(error => minecraftLogger.error(error.message)),
       onAuthCode: data => database.putLoginChallenge(account.id, data)
-        .catch(error => console.error(`[minecraft] ${error.message}`)) });
+        .catch(error => minecraftLogger.error(error.message)) });
     workers.set(account.id, {
       worker, busy: false, currentItemId: null, scanDelayMs: config.scanDelayMs, nextScanAt: 0
     });
@@ -64,7 +67,7 @@ async function main() {
   async function schedule() {
     const stored = await database.getConfig();
     if (!stored) return;
-    const runtime = normalizeRuntimeConfig(stored, { scanSettleMs: config.scanSettleMs,
+    const runtime = normalizeSetting(stored, { scanSettleMs: config.scanSettleMs,
       scanDelayMs: config.scanDelayMs });
     for (const entry of workers.values()) {
       entry.worker.setScanSettleMs(runtime.scanSettleMs);
@@ -118,12 +121,12 @@ async function main() {
   }
   while (!stopping) {
     try { await processCommands(); await schedule(); await dispatch(); await heartbeat(); }
-    catch (error) { console.error(`[scheduler] ${error.message}`); }
+    catch (error) { schedulerLogger.error(error.message); }
     await wait(1000);
   }
   for (const accountId of [...workers.keys()]) await stop(accountId);
   await database.close();
 }
 
-if (require.main === module) main().catch(error => { console.error(`[minecraft] ${error.stack || error}`); process.exit(1); });
+if (require.main === module) main().catch(error => { minecraftLogger.error(error); process.exit(1); });
 module.exports = { main };

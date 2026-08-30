@@ -1,5 +1,7 @@
 "use strict";
 
+require("dotenv").config();
+
 function number(name, fallback, minimum = 0) {
   const value = Number(process.env[name] ?? fallback);
   if (!Number.isFinite(value) || value < minimum) throw new Error(`${name} must be >= ${minimum}`);
