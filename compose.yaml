@@ -36,7 +36,11 @@ services:
     volumes:
       - auth-profiles:/app/profiles
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch(`http://localhost:$${process.env.API_PORT||6600}/api/health`).then(r=>process.exit(!r.ok))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:'+(process.env.API_PORT||6600)+'/api/health').then(r=>process.exit(r.ok?0:1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   collector:
     image: order-analytics-app:local
