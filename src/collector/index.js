@@ -109,7 +109,7 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
     if (!ready || !bot) throw Object.assign(new Error("Minecraft bot is not connected"), { statusCode: 503 });
     if (!item?.id || !item?.query) throw Object.assign(new Error("item id and query are required"), { statusCode: 400 });
     if (bot.currentWindow) {
-      logger.info(`Action: close window ${logText(bot.currentWindow.title) || bot.currentWindow.id}`);
+      logger.debug(`Action: close window ${logText(bot.currentWindow.title) || bot.currentWindow.id}`);
       bot.closeWindow(bot.currentWindow);
     }
 
@@ -118,7 +118,7 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
     const windowPromise = waitForOrdersWindow();
     bot.chat(`/order ${item.query}`);
     const window = await windowPromise;
-    logger.info(`Action: opened ${logText(window.title)}`);
+    logger.debug(`Action: opened ${logText(window.title)}`);
     try {
       await wait(randomizedConfiguredDelayMs(settleMs));
       const orders = [];
@@ -135,11 +135,11 @@ function createCollector({ minecraft, accountId, scanSettleMs, observationClient
         windowTitle: logText(window.title), orders
       });
       lastScan = { itemId: item.id, query: item.query, ...result };
-      scanLogger.info(`${item.id}: best=${result.bestPrice}, volume=${result.totalVolume}, orders=${orders.length}`);
+      scanLogger.debug(`${item.id}: best=${result.bestPrice}, volume=${result.totalVolume}, orders=${orders.length}`);
       return result;
     } finally {
       if (bot.currentWindow?.id === window.id) {
-        logger.info(`Action: close window ${logText(window.title) || window.id}`);
+        logger.debug(`Action: close window ${logText(window.title) || window.id}`);
         bot.closeWindow(window);
       }
     }
