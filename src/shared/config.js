@@ -22,7 +22,7 @@ function loadConfig() {
   const username = String(process.env.MC_USERNAME || "").trim();
   const rawVersion = String(process.env.MC_VERSION || "false").trim();
 
-  const apiPort = number("API_PORT", 3010, 1);
+  const apiPort = number("API_PORT", 6600, 1);
   return {
     minecraft: {
       host: String(process.env.MC_HOST || "localhost"),
@@ -32,7 +32,7 @@ function loadConfig() {
     },
     legacyAccount: username ? { username, auth } : null,
     databaseUrl: process.env.DATABASE_URL ||
-      "postgres://order_analytics:order_analytics@127.0.0.1:55432/order_analytics",
+      "postgres://order_analytics:order_analytics@127.0.0.1:6610/order_analytics",
     apiPort,
     internalApiUrl: process.env.INTERNAL_API_URL || `http://127.0.0.1:${apiPort}`,
     scanIntervalMs: number("SCAN_INTERVAL_SECONDS", 300, 10) * 1000,

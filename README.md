@@ -40,8 +40,8 @@ Chỉnh tối thiểu:
 MC_HOST=play.example.com
 MC_PORT=25565
 MC_VERSION=false
-SERVICE_PORT_API=3010
-SERVICE_PORT_PG=55432
+SERVICE_PORT_API=6600
+SERVICE_PORT_PG=6610
 POSTGRES_DB=order_analytics
 POSTGRES_USER=order_analytics
 POSTGRES_PASSWORD=change-me
@@ -56,7 +56,7 @@ docker compose up -d --build
 docker compose logs -f collector
 ```
 
-Mở UI tại [http://localhost:3010](http://localhost:3010), thêm account rồi bấm
+Mở UI tại [http://localhost:6600](http://localhost:6600), thêm account rồi bấm
 Login. UI sẽ hiện URL và device code Microsoft. Token chỉ được giữ trong volume
 `auth-profiles`; Express API không đọc volume này.
 
@@ -88,15 +88,15 @@ Các giá trị kết nối đọc từ environment và cần restart khi thay �
 | `MC_VERSION` | `false` | Tự nhận protocol hoặc version như `1.21.4` |
 | `MC_PROFILES_FOLDER` | `./profiles` | Thư mục gốc authentication cache của collector |
 | `DATABASE_URL` | PostgreSQL local | Database connection string |
-| `API_PORT` | `3010` | HTTP/UI port |
+| `API_PORT` | `6600` | HTTP/UI port |
 
 Các port publish của Docker Compose được cấu hình riêng và luôn bind vào
 `127.0.0.1` theo mặc định:
 
 | Biến | Mặc định | Ý nghĩa |
 |---|---:|---|
-| `SERVICE_PORT_API` | `3010` | Host port publish API/UI |
-| `SERVICE_PORT_PG` | `55432` | Host port publish PostgreSQL |
+| `SERVICE_PORT_API` | `6600` | Host port publish API/UI |
+| `SERVICE_PORT_PG` | `6610` | Host port publish PostgreSQL |
 | `POSTGRES_DB` | `order_analytics` | Database do Compose khởi tạo |
 | `POSTGRES_USER` | `order_analytics` | PostgreSQL user do Compose khởi tạo |
 | `POSTGRES_PASSWORD` | `order_analytics` | PostgreSQL password do Compose khởi tạo |
@@ -154,12 +154,12 @@ API không có authentication. Compose mặc định chỉ bind vào loopback.
 Ví dụ:
 
 ```bash
-curl -X POST http://localhost:3010/api/analytics/scans \
+curl -X POST http://localhost:6600/api/analytics/scans \
   -H 'Content-Type: application/json' \
   -d '{"id":"minecraft:redstone_block","query":"redstone block"}'
 
-curl 'http://localhost:3010/api/analytics/snapshots?itemId=minecraft:redstone_block&limit=20'
-curl 'http://localhost:3010/api/analytics/opportunities/minecraft:redstone_block'
+curl 'http://localhost:6600/api/analytics/snapshots?itemId=minecraft:redstone_block&limit=20'
+curl 'http://localhost:6600/api/analytics/opportunities/minecraft:redstone_block'
 ```
 
 ## Dữ liệu và Grafana
@@ -203,7 +203,7 @@ và hai snapshot cách nhau ít nhất một giây, tránh false positive.
 Kết nối Grafana local:
 
 ```text
-Host: 127.0.0.1:55432
+Host: 127.0.0.1:6610
 Database/User/Password: order_analytics
 ```
 
@@ -227,6 +227,26 @@ node --check src/collector/main.js
 docker compose config
 docker compose build api collector
 ```
+
+## Continuous deployment
+
+Workflow `.github/workflows/cd.yml` chạy test, syntax check và build image khi push
+lên `main`. Sau khi verify thành công, job `production` kết nối SSH và chạy
+`git pull --ff-only` cùng `docker compose up -d --build --remove-orphans`.
+
+Tạo GitHub Environment tên `production` với các environment secrets:
+
+| Secret | Ý nghĩa |
+|---|---|
+| `SSH_HOST` | Host production có thể truy cập qua SSH |
+| `SSH_PORT` | SSH port; có thể bỏ trống để dùng `22` |
+| `SSH_USER` | User có quyền chạy Docker Compose |
+| `SSH_PRIVATE_KEY` | Private key dùng cho deploy |
+| `DEPLOY_PATH` | Thư mục checkout repository trên server |
+
+Server production phải có Docker/Compose, repository đã checkout nhánh `main`
+và file `.env` đã cấu hình trong `DEPLOY_PATH`. Workflow không tạo hay ghi
+đè `.env`, database hoặc authentication volume.
 
 ## Giới hạn
 

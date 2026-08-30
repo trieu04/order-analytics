@@ -37,6 +37,8 @@ Mineflayer → /order → Orders (Page 1) → parser → PostgreSQL → Analytic
 ## Cấu hình
 
 - Credentials, Minecraft host/port/version, database URL và API port là static env.
+- Dùng dải port `6600-6609` cho app; API mặc định dùng `6600`.
+- Dùng dải port `6610-6619` cho external service; PostgreSQL host port mặc định dùng `6610`.
 - Item list, scheduler, interval và settle time là dynamic PostgreSQL config.
 - Environment dynamic values chỉ seed `app_config` lần đầu, không ghi đè config operator.
 - Mọi `PUT /api/settings` phải qua `normalizeSetting`.
