@@ -39,8 +39,19 @@ function createAnalyticRouter(database, getSetting) {
   router.post("/observations", async (req, res) =>
     res.status(201).json(await database.addSnapshot(observationInput(req.body))));
   router.get("/snapshots", async (req, res) => {
-    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
-    res.json(await database.snapshots(req.query.itemId ? String(req.query.itemId) : null, limit));
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 5000);
+    const parseDate = (value, name) => {
+      if (value == null || value === "") return null;
+      const date = new Date(String(value));
+      if (Number.isNaN(date.getTime()))
+        throw Object.assign(new Error(`${name} must be a valid date`), { statusCode: 400 });
+      return date;
+    };
+    const from = parseDate(req.query.from, "from");
+    const to = parseDate(req.query.to, "to");
+    if (from && to && from > to)
+      throw Object.assign(new Error("from must not be after to"), { statusCode: 400 });
+    res.json(await database.snapshots(req.query.itemId ? String(req.query.itemId) : null, limit, { from, to }));
   });
   router.get("/opportunities/:itemId", async (req, res) =>
     res.json(await database.opportunities(String(req.params.itemId))));

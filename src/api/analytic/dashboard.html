@@ -3,6 +3,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Minecraft Order Analytics</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
     [x-cloak]{display:none!important} main{max-width:1100px} header{margin-block:2rem 1rem}
@@ -10,7 +11,7 @@
     .items{display:grid;grid-template-columns:auto minmax(220px,1fr) minmax(180px,1fr) auto auto;gap:.65rem;align-items:center}
     .items input,.items button{margin-bottom:0}.head{font-weight:600;color:var(--pico-muted-color)}
     .section-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-    .section-head h2,.section-head select,.section-head button{margin-bottom:0}.section-head select{min-width:260px}
+    .section-head h2,.section-head button{margin-bottom:0}.market-controls{display:flex;align-items:flex-start;gap:.5rem}.market-controls>button{width:auto;white-space:nowrap}.item-picker{position:relative;width:330px;margin:0}.item-picker summary{box-sizing:border-box;display:flex;min-height:56px;align-items:center;gap:.65rem;margin:0;padding:.45rem 2.2rem .45rem .7rem;border:1px solid var(--pico-form-element-border-color);border-radius:var(--pico-border-radius);background:var(--pico-form-element-background-color);cursor:pointer}.item-picker summary::after{position:absolute;right:.8rem}.item-picker[open]>summary{margin-bottom:0;border-color:var(--pico-primary)}.picker-label{display:flex;min-width:0;flex:1;flex-direction:column}.picker-label strong,.picker-label small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.picker-label strong{color:var(--pico-primary)}.picker-label small{color:var(--pico-muted-color)}.item-options{position:absolute;z-index:20;top:calc(100% + .35rem);right:0;width:100%;max-height:360px;overflow-y:auto;padding:.4rem;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius);background:var(--pico-card-background-color);box-shadow:var(--pico-box-shadow)}.item-option{display:flex;width:100%;min-height:56px;align-items:center;gap:.65rem;margin:0;padding:.55rem .65rem;border:1px solid transparent;border-radius:var(--pico-border-radius);background:transparent;color:var(--pico-color);box-shadow:none;text-align:left;transform:none;transition:background-color .15s ease,border-color .15s ease}.item-option+.item-option{margin-top:.2rem}.item-option:hover,.item-option:focus-visible{border-color:var(--pico-muted-border-color);background:color-mix(in srgb,var(--pico-primary) 9%,var(--pico-card-background-color));color:var(--pico-color);box-shadow:none;transform:none}.item-option:active{background:color-mix(in srgb,var(--pico-primary) 14%,var(--pico-card-background-color));transform:none}.item-option.selected{border-color:color-mix(in srgb,var(--pico-primary) 35%,var(--pico-muted-border-color));background:color-mix(in srgb,var(--pico-primary) 14%,var(--pico-card-background-color));color:var(--pico-color)}.item-option .picker-label strong,.item-option.selected .picker-label strong{color:var(--pico-primary)}.item-option .picker-label small,.item-option.selected .picker-label small{color:var(--pico-muted-color)}.item-image-slot{display:grid;width:40px;height:40px;flex:0 0 40px;place-items:center}.item-image{display:block;width:32px;height:32px;aspect-ratio:1;object-fit:contain;image-rendering:pixelated}.selected-item{display:flex;align-items:center;gap:.8rem;margin:.25rem 0 1rem}.selected-item .item-image-slot{width:48px;height:48px;flex-basis:48px}.selected-item .item-image{width:48px;height:48px}.selected-item strong,.selected-item small{display:block}.selected-item small{color:var(--pico-muted-color)}
     .metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin-block:1rem}
     .metric{padding:1rem;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)}
     .metric-focus{border:2px solid color-mix(in srgb,var(--pico-primary) 22%,var(--pico-muted-border-color))}
@@ -23,8 +24,12 @@
     .up{color:#16803c}.down{color:#c52f21}.table-wrap{overflow-x:auto}table{white-space:nowrap}
     .bar{width:110px;height:.5rem;background:var(--pico-muted-border-color);border-radius:1rem;overflow:hidden}
     .bar span{display:block;height:100%;background:var(--pico-primary);border-radius:inherit}
+    .chart{position:relative;height:360px;margin:1rem 0 1.5rem;padding:.75rem;border:1px solid var(--pico-muted-border-color);border-radius:var(--pico-border-radius)}
+    .filters,.pagination{display:flex;gap:.6rem;align-items:end;flex-wrap:wrap}.filters label{margin:0}.filters select,.filters input,.pagination button{margin-bottom:0}.pagination{justify-content:flex-end;align-items:center;margin-top:.75rem}.pagination label{display:flex;align-items:center;gap:.5rem;margin:0;white-space:nowrap}.pagination select{width:auto;min-width:5rem;margin:0;padding-block:.45rem}.pagination button{width:auto;padding:.5rem .85rem;white-space:nowrap}.pagination span{font-size:.9rem;color:var(--pico-muted-color);white-space:nowrap}
     @media(max-width:700px){.head{display:none}.items{grid-template-columns:auto 1fr auto auto}.items .query{grid-column:2/-1}}
-    @media(max-width:800px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.section-head select{width:100%}}
+    @media(max-width:800px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.market-controls{width:100%}.item-picker{min-width:0;flex:1}}
+    @media(max-width:520px){.market-controls{align-items:stretch;flex-direction:column}.item-picker,.market-controls>button{width:100%}}
+    @media(max-width:560px){.pagination{justify-content:flex-start}.pagination label{width:100%}.pagination span{order:4;width:100%}}
     @media(max-width:420px){.metrics{grid-template-columns:1fr}}
   </style>
 </head><body>
@@ -37,16 +42,25 @@
   <article>
     <header class="section-head">
       <hgroup><h2>Thống kê thị trường</h2><p>Snapshot và price ladder gần nhất</p></hgroup>
-      <div role="group">
-        <select x-model="selectedItem" @change="loadStats()" aria-label="Chọn item thống kê">
-          <option value="">Chọn item</option>
-          <template x-for="item in config.items" :key="item.id"><option :value="item.id" x-text="item.id"></option></template>
-        </select>
+      <div class="market-controls">
+        <details class="item-picker" x-ref="itemPicker">
+          <summary aria-label="Chọn item thống kê">
+            <span class="item-image-slot"><img class="item-image" :src="selectedItemData?.image" :alt="selectedItemData?.name||''" x-show="selectedItemData?.image"></span>
+            <span class="picker-label"><strong x-text="selectedItemData?.name||'Chọn item'"></strong><small x-text="selectedItemData?.id||'Chọn item để xem thống kê'"></small></span>
+          </summary>
+          <div class="item-options">
+            <template x-for="item in config.items" :key="item.id"><button class="item-option" :class="{'selected':item.id===selectedItem}" @click="selectItem(item.id)" :aria-current="item.id===selectedItem?'true':null">
+              <span class="item-image-slot"><img class="item-image" :src="item.image" :alt="item.name||item.id" x-show="item.image"></span>
+              <span class="picker-label"><strong x-text="item.name||item.id"></strong><small x-text="item.id"></small></span>
+            </button></template>
+          </div>
+        </details>
         <button class="outline" :aria-busy="statsLoading" :disabled="statsLoading||!selectedItem" @click="loadStats()">Làm mới</button>
       </div>
     </header>
     <div x-show="statsLoading" aria-busy="true">Đang tải thống kê…</div>
     <template x-if="!statsLoading && latest"><div>
+      <div class="selected-item"><span class="item-image-slot"><img class="item-image" :src="selectedItemData?.image" :alt="selectedItemData?.name||selectedItem" x-show="selectedItemData?.image"></span><span><strong x-text="selectedItemData?.name||selectedItem"></strong><small x-text="selectedItem"></small></span></div>
       <div class="metrics">
         <div class="metric metric-focus market-cell"><small>Giá thị trường cao nhất</small><strong x-text="formatNumber(latest.marketMaxPrice)"></strong><small class="queue" x-text="`Queue ${formatNumber(latest.marketMaxPriceQueue)}`"></small><div class="fill-detail"><span x-text="`${formatNumber(latest.marketMaxPriceDelivered)} / ${formatNumber(latest.marketMaxPriceVolume)}`"></span><span x-text="formatPercent(ratio(latest.marketMaxPriceDelivered,latest.marketMaxPriceVolume))"></span></div><div class="fill-track"><span :style="`width:${percentWidth(latest.marketMaxPriceDelivered,latest.marketMaxPriceVolume)}%`"></span></div></div>
         <div class="metric metric-focus market-cell"><small>Order trên giá trung bình</small><strong x-text="`> ${formatNumber(latest.marketAveragePrice,2)}`"></strong><small class="queue" x-text="`Queue ${formatNumber(latest.higherThanAverageQueue)}`"></small><div class="fill-detail"><span x-text="`${formatNumber(latest.higherThanAverageDelivered)} / ${formatNumber(latest.higherThanAverageVolume)}`"></span><span x-text="formatPercent(ratio(latest.higherThanAverageDelivered,latest.higherThanAverageVolume))"></span></div><div class="fill-track"><span :style="`width:${percentWidth(latest.higherThanAverageDelivered,latest.higherThanAverageVolume)}%`"></span></div></div>
@@ -55,18 +69,29 @@
         <div class="metric"><small>Giá buy tốt nhất</small><strong x-text="formatNumber(latest.bestPrice)"></strong><small :class="changeClass(priceChange)" x-text="formatChange(priceChange)"></small></div>
         <div class="metric"><small>Quan sát gần nhất</small><strong x-text="formatTime(latest.observedAt)"></strong><small x-text="formatDateOnly(latest.observedAt)"></small></div>
       </div>
+      <h3>Price ladder</h3>
+      <p><small>Giá và tổng queue của các mức giá cao hơn tại snapshot mới nhất.</small></p>
+      <div class="chart" x-show="opportunities.length"><canvas x-ref="ladderChart" role="img" aria-label="Biểu đồ Price ladder: giá và queue giá cao hơn"></canvas></div>
       <h3>Price ladder hiện tại</h3>
       <div class="table-wrap"><table><thead><tr><th>Giá</th><th>Volume</th><th>Fill</th><th>Queue giá cao hơn</th><th>Velocity/phút</th></tr></thead><tbody>
-        <template x-for="level in opportunities" :key="level.price"><tr>
+        <template x-for="level in pagedOpportunities" :key="level.price"><tr>
           <td x-text="formatNumber(level.price)"></td><td x-text="formatNumber(level.remainingVolume)"></td>
           <td><span x-text="formatPercent(level.fillRatio)"></span><div class="bar"><span :style="`width:${Math.max(0,Math.min(100,Number(level.fillRatio)*100))}%`"></span></div></td>
           <td x-text="formatNumber(level.higherPriceQueue)"></td><td x-text="level.fillVelocityPerMinute==null?'Chưa đủ dữ liệu':formatNumber(level.fillVelocityPerMinute,2)"></td>
         </tr></template>
       </tbody></table></div>
+      <div class="pagination"><label>Số dòng <select x-model.number="ladderPageSize" @change="ladderPage=1"><option :value="5">5</option><option :value="10">10</option><option :value="20">20</option><option :value="50">50</option></select></label><button class="outline secondary" :disabled="ladderPage<=1" @click="ladderPage--">Trước</button><span x-text="pageLabel(ladderPage,opportunities.length,ladderPageSize)"></span><button class="outline secondary" :disabled="ladderPage>=pageCount(opportunities.length,ladderPageSize)" @click="ladderPage++">Sau</button></div>
       <h3>Lịch sử gần đây</h3>
+      <div class="filters">
+        <label>Khoảng thời gian<select x-model="historyRange" @change="historyPage=1;loadHistorySafe()"><option value="4h">4 giờ</option><option value="1d">1 ngày</option><option value="7d">7 ngày</option><option value="custom">Tùy chỉnh</option></select></label>
+        <template x-if="historyRange==='custom'"><label>Từ<input type="datetime-local" x-model="customFrom"></label></template>
+        <template x-if="historyRange==='custom'"><label>Đến<input type="datetime-local" x-model="customTo"></label></template>
+        <button x-show="historyRange==='custom'" class="outline" @click="historyPage=1;loadHistorySafe()">Áp dụng</button>
+      </div>
+      <div class="chart" x-show="snapshots.length"><canvas x-ref="historyChart" role="img" aria-label="Biểu đồ lịch sử giá cao nhất và giá trung bình theo thời gian"></canvas></div>
       <p><small>Mỗi tỷ lệ hiển thị Delivered / Volume và fill tương ứng. Giá trung bình weighting theo số đã giao.</small></p>
       <div class="table-wrap"><table class="history-table"><thead><tr><th>Thời gian</th><th class="focus-col">Giá cao nhất</th><th class="focus-col">Trên trung bình</th><th>Giá trung bình</th><th>Mẫu</th></tr></thead><tbody>
-        <template x-for="snapshot in snapshots" :key="snapshot.id"><tr>
+        <template x-for="snapshot in pagedSnapshots" :key="snapshot.id"><tr>
           <td x-text="formatDate(snapshot.observedAt)"></td>
           <td class="market-cell focus-col"><strong x-text="formatNumber(snapshot.marketMaxPrice)"></strong><small class="queue" x-text="`Queue ${formatNumber(snapshot.marketMaxPriceQueue)}`"></small><div class="fill-detail"><span x-text="`${formatNumber(snapshot.marketMaxPriceDelivered)} / ${formatNumber(snapshot.marketMaxPriceVolume)}`"></span><span x-text="formatPercent(ratio(snapshot.marketMaxPriceDelivered,snapshot.marketMaxPriceVolume))"></span></div><div class="fill-track"><span :style="`width:${percentWidth(snapshot.marketMaxPriceDelivered,snapshot.marketMaxPriceVolume)}%`"></span></div></td>
           <td class="market-cell focus-col"><strong x-text="`> ${formatNumber(snapshot.marketAveragePrice,2)}`"></strong><small class="queue" x-text="`Queue ${formatNumber(snapshot.higherThanAverageQueue)}`"></small><div class="fill-detail"><span x-text="`${formatNumber(snapshot.higherThanAverageDelivered)} / ${formatNumber(snapshot.higherThanAverageVolume)}`"></span><span x-text="formatPercent(ratio(snapshot.higherThanAverageDelivered,snapshot.higherThanAverageVolume))"></span></div><div class="fill-track"><span :style="`width:${percentWidth(snapshot.higherThanAverageDelivered,snapshot.higherThanAverageVolume)}%`"></span></div></td>
@@ -74,6 +99,7 @@
           <td class="market-cell"><strong x-text="`${formatNumber(snapshot.marketSampleOrderCount)} orders`"></strong><div class="fill-detail"><span x-text="`${formatNumber(snapshot.marketSampleDelivered)} / ${formatNumber(snapshot.marketSampleVolume)}`"></span><span x-text="formatPercent(ratio(snapshot.marketSampleDelivered,snapshot.marketSampleVolume))"></span></div><div class="fill-track"><span :style="`width:${percentWidth(snapshot.marketSampleDelivered,snapshot.marketSampleVolume)}%`"></span></div></td>
         </tr></template>
       </tbody></table></div>
+      <div class="pagination"><label>Số dòng <select x-model.number="historyPageSize" @change="historyPage=1"><option :value="5">5</option><option :value="10">10</option><option :value="20">20</option><option :value="50">50</option></select></label><button class="outline secondary" :disabled="historyPage<=1" @click="historyPage--">Trước</button><span x-text="pageLabel(historyPage,snapshots.length,historyPageSize)"></span><button class="outline secondary" :disabled="historyPage>=pageCount(snapshots.length,historyPageSize)" @click="historyPage++">Sau</button></div>
     </div></template>
     <p x-show="!statsLoading && selectedItem && !latest"><small>Chưa có snapshot cho item này. Hãy chạy một lần quét.</small></p>
     <p x-show="!selectedItem"><small>Chọn một item để xem thống kê.</small></p>
@@ -84,13 +110,29 @@
 <script>
 function configUi(){return{
   config:{items:[]},health:{ok:false},message:'',scanning:null,
-  selectedItem:'',snapshots:[],opportunities:[],statsLoading:false,
-  get latest(){return this.snapshots[0]||null},get previous(){return this.snapshots[1]||null},
+  selectedItem:'',snapshots:[],latestSnapshots:[],opportunities:[],statsLoading:false,ladderPageSize:5,historyPageSize:5,ladderPage:1,historyPage:1,historyRange:'4h',customFrom:'',customTo:'',ladderChart:null,historyChart:null,
+  get latest(){return this.latestSnapshots[0]||null},get previous(){return this.latestSnapshots[1]||null},
+  get selectedItemData(){return this.config.items.find(item=>item.id===this.selectedItem)||null},
+  get pagedOpportunities(){return this.opportunities.slice((this.ladderPage-1)*this.ladderPageSize,this.ladderPage*this.ladderPageSize)},get pagedSnapshots(){return this.snapshots.slice((this.historyPage-1)*this.historyPageSize,this.historyPage*this.historyPageSize)},
+  get ladderChartValues(){return [...this.opportunities].map(value=>({...value,price:Number(value.price),higherPriceQueue:Number(value.higherPriceQueue)})).sort((a,b)=>b.price-a.price)},
+  get historyChartValues(){return [...this.snapshots].map(value=>({...value,time:new Date(value.observedAt).getTime()})).sort((a,b)=>a.time-b.time)},
+  get historyPriceExtent(){const values=this.historyChartValues.flatMap(value=>[Number(value.marketMaxPrice),Number(value.marketAveragePrice)]).filter(Number.isFinite);return this.extent(values)},
   get priceChange(){return this.delta('bestPrice')},
   async request(url,options){const response=await fetch(url,options),data=await response.json();if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data},
   notify(text,error=false){this.message=(error?'Lỗi: ':'')+text},
-  async load(){try{[this.config,this.health]=await Promise.all([this.request('/api/settings'),this.request('/api/health')]);if(!this.config.items.some(item=>item.id===this.selectedItem))this.selectedItem=this.config.items[0]?.id||'';await this.loadStats();this.notify('')}catch(error){this.notify(error.message,true)}},
-  async loadStats(){this.snapshots=[];this.opportunities=[];if(!this.selectedItem)return;this.statsLoading=true;try{[this.snapshots,this.opportunities]=await Promise.all([this.request(`/api/analytics/snapshots?itemId=${encodeURIComponent(this.selectedItem)}&limit=20`),this.request(`/api/analytics/opportunities/${encodeURIComponent(this.selectedItem)}`)])}catch(error){this.notify(error.message,true)}finally{this.statsLoading=false}},
+  async load(){try{[this.config,this.health]=await Promise.all([this.request('/api/settings'),this.request('/api/health')]);const ids=this.config.items.map(item=>item.id).join(',');if(ids){const details=await this.request(`/api/settings/items?ids=${encodeURIComponent(ids)}`),byId=Object.fromEntries(details.map(item=>[item.id,item]));this.config.items=this.config.items.map(item=>({...byId[item.id],...item}))}if(!this.config.items.some(item=>item.id===this.selectedItem))this.selectedItem=this.config.items[0]?.id||'';await this.loadStats();this.notify('')}catch(error){this.notify(error.message,true)}},
+  async selectItem(id){this.selectedItem=id;this.$refs.itemPicker?.removeAttribute('open');await this.loadStats()},
+  async loadStats(){this.snapshots=[];this.latestSnapshots=[];this.opportunities=[];this.ladderPage=1;this.historyPage=1;if(!this.selectedItem)return;this.statsLoading=true;try{[this.latestSnapshots,this.opportunities]=await Promise.all([this.request(`/api/analytics/snapshots?itemId=${encodeURIComponent(this.selectedItem)}&limit=2`),this.request(`/api/analytics/opportunities/${encodeURIComponent(this.selectedItem)}`)]);await this.loadHistory()}catch(error){this.notify(error.message,true)}finally{this.statsLoading=false;this.$nextTick(()=>this.renderCharts())}},
+  historyBounds(){if(this.historyRange==='custom')return{from:this.customFrom?new Date(this.customFrom):null,to:this.customTo?new Date(this.customTo):null};const hours={"4h":4,"1d":24,"7d":168}[this.historyRange]||4;return{from:new Date(Date.now()-hours*3600000),to:null}},
+  async loadHistory(){if(!this.selectedItem)return;const bounds=this.historyBounds(),params=new URLSearchParams({itemId:this.selectedItem,limit:'5000'});if(bounds.from)params.set('from',bounds.from.toISOString());if(bounds.to)params.set('to',bounds.to.toISOString());this.snapshots=await this.request(`/api/analytics/snapshots?${params}`)},
+  async loadHistorySafe(){try{await this.loadHistory();this.notify('');this.$nextTick(()=>this.renderHistoryChart())}catch(error){this.notify(error.message,true)}},
+  pageCount(total,pageSize){return Math.max(1,Math.ceil(total/pageSize))},pageLabel(page,total,pageSize){return `Trang ${page} / ${this.pageCount(total,pageSize)} · ${this.formatNumber(total)} dòng`},
+  renderCharts(){this.renderLadderChart();this.renderHistoryChart()},
+  baseChartOptions(){return{responsive:true,maintainAspectRatio:false,interaction:{mode:'nearest',axis:'x',intersect:false},plugins:{legend:{display:true}},scales:{y:{title:{display:true},beginAtZero:false}}}},
+  renderLadderChart(){this.ladderChart?.destroy();this.ladderChart=null;if(!this.$refs.ladderChart||!window.Chart||!this.ladderChartValues.length)return;const values=this.ladderChartValues,options=this.baseChartOptions();options.scales.x={type:'linear',reverse:true,title:{display:true,text:'Giá (cao → thấp)'},ticks:{autoSkip:true,maxTicksLimit:10,callback:value=>this.formatNumber(value,2)}};options.scales.y.title.text='Queue giá cao hơn';options.plugins.tooltip={callbacks:{title:items=>items.length?`Giá: ${this.formatNumber(items[0].parsed.x,4)}`:''}};this.ladderChart=new Chart(this.$refs.ladderChart,{type:'line',data:{datasets:[{label:'Queue giá cao hơn',data:values.map(value=>({x:Number(value.price),y:Number(value.higherPriceQueue)})),borderColor:'#1376b8',backgroundColor:'#1376b8',pointRadius:4,pointHoverRadius:7,tension:.15}]},options})},
+  historyTickStep(){const bounds=this.historyBounds(),end=bounds.to?.getTime()||Date.now(),start=bounds.from?.getTime()||this.historyChartValues[0]?.time||end-14400000,duration=Math.max(1,end-start),steps=[300000,600000,900000,1800000,3600000,7200000,10800000,21600000,43200000,86400000,172800000,604800000];return steps.find(step=>duration/step<=10)||steps.at(-1)},
+  historyTickLabel(value){const duration=this.historyTickStep(),options=duration>=86400000?{day:'2-digit',month:'2-digit'}:{hour:'2-digit',minute:'2-digit'};return new Intl.DateTimeFormat('vi-VN',options).format(new Date(value))},
+  renderHistoryChart(){this.historyChart?.destroy();this.historyChart=null;if(!this.$refs.historyChart||!window.Chart||!this.historyChartValues.length)return;const values=this.historyChartValues,toPrice=value=>value==null?null:Number(value),bounds=this.historyBounds(),options=this.baseChartOptions();options.scales.x={type:'linear',min:bounds.from?.getTime(),max:bounds.to?.getTime()||Date.now(),title:{display:true,text:'Thời gian'},ticks:{stepSize:this.historyTickStep(),autoSkip:false,maxRotation:0,callback:value=>this.historyTickLabel(value)}};options.scales.y.title.text='Giá';options.plugins.tooltip={callbacks:{title:items=>items.length?this.formatDate(items[0].parsed.x):''}};this.historyChart=new Chart(this.$refs.historyChart,{type:'line',data:{datasets:[{label:'Giá cao nhất',data:values.map(value=>({x:value.time,y:toPrice(value.marketMaxPrice)})),borderColor:'#1376b8',backgroundColor:'#1376b8',pointRadius:3,pointHoverRadius:7,tension:.15},{label:'Giá trung bình',data:values.map(value=>({x:value.time,y:toPrice(value.marketAveragePrice)})),borderColor:'#e08b2c',backgroundColor:'#e08b2c',pointRadius:3,pointHoverRadius:7,tension:.15}]},options})},
   delta(field){if(!this.latest||!this.previous||this.latest[field]==null||this.previous[field]==null)return null;return Number(this.latest[field])-Number(this.previous[field])},
   formatNumber(value,digits=0){if(value==null)return '—';return new Intl.NumberFormat('vi-VN',{maximumFractionDigits:digits}).format(Number(value))},
   formatPercent(value){return value==null?'—':new Intl.NumberFormat('vi-VN',{style:'percent',maximumFractionDigits:1}).format(Number(value))},

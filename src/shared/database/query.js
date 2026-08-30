@@ -258,7 +258,7 @@ function createQuery(db, pool) {
       WHERE status='running';`);
   }
 
-  async function snapshots(itemId, limit) {
+  async function snapshots(itemId, limit, { from = null, to = null } = {}) {
     const result = await db.execute(sql`
       SELECT snapshot.id, snapshot.bot_id AS "botId", snapshot.item_id AS "itemId",
              snapshot.search_query AS query, snapshot.observed_at AS "observedAt",
@@ -299,6 +299,8 @@ function createQuery(db, pool) {
         WHERE entry.snapshot_id = snapshot.id AND entry.delivered > 0
       ) active ON true
       WHERE (${itemId || null}::text IS NULL OR snapshot.item_id = ${itemId || null})
+        AND (${from}::timestamptz IS NULL OR snapshot.observed_at >= ${from})
+        AND (${to}::timestamptz IS NULL OR snapshot.observed_at <= ${to})
       ORDER BY snapshot.observed_at DESC LIMIT ${limit}
     `);
     return result.rows;
